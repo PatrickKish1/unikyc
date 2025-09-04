@@ -22,13 +22,15 @@ import {
 import { useMemo, useState, useCallback } from "react";
 import { Button } from "./components/DemoComponents";
 import { Icon } from "./components/DemoComponents";
-import { Shield, ArrowRight, Users, Lock, Globe, Zap, CheckCircle, Star, ArrowUpRight, Play } from 'lucide-react';
+import { ArrowRight, Users, Lock, Globe, CheckCircle, Star, ArrowUpRight, Play } from 'lucide-react';
 
 export default function App() {
   const { setFrameReady, isFrameReady, context } = useMiniKit();
   const [frameAdded, setFrameAdded] = useState(false);
   const [activeTab, setActiveTab] = useState("home");
   const heroRef = useRef<HTMLDivElement>(null);
+
+  console.log(heroRef);
 
   const addFrame = useAddFrame();
   const openUrl = useOpenUrl();
@@ -236,9 +238,9 @@ export default function App() {
           Revolutionizing Identity Verification
         </h3>
         <p className="text-white/70 mb-6 leading-relaxed text-sm">
-          UniKYC represents a paradigm shift in how we think about digital identity. 
+          {`UniKYC represents a paradigm shift in how we think about digital identity. 
           By combining blockchain technology with advanced cryptography, we've created 
-          a system that's both more secure and more user-friendly than traditional solutions.
+          a system that's both more secure and more user-friendly than traditional solutions.`}
         </p>
         
         <div className="space-y-3">
