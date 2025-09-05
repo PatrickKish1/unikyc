@@ -20,8 +20,7 @@ import {
   WalletDropdownDisconnect,
 } from "@coinbase/onchainkit/wallet";
 import { useMemo, useState, useCallback } from "react";
-import { Button } from "./components/DemoComponents";
-import { Icon } from "./components/DemoComponents";
+import { Icon, Button } from "../components/DemoComponents";
 import { ArrowRight, Users, Lock, Globe, CheckCircle, Star, ArrowUpRight, Play } from 'lucide-react';
 
 export default function App() {
