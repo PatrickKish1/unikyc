@@ -1,0 +1,5585 @@
+ETH FP DOCS
+
+Add to your dApp
+This quickstart guide assumes you have a basic understanding of React.
+
+Installation
+Terminal
+
+npm install wagmi viem @tanstack/react-query
+Showing the User Profile
+The below codesnippet demonstrates how you can create a basic user profile section that shows the users ENS name and avatar. The snippet leverages the useAccount, useEnsName, and useEnsAvatar hooks from wagmi.
+
+
+nick.eth
+0xb8c2...67d5
+
+jefflau.eth
+0x866B...5eEE
+
+vitalik.eth
+0xd8dA...6045
+
+import { useAccount, useEnsAvatar, useEnsName } from 'wagmi'
+ 
+export const EnsProfile = () => {
+  const { address } = useAccount()
+  const { data: name } = useEnsName({ address, chainId: 1 })
+  const { data: avatar } = useEnsAvatar({ name, chainId: 1 })
+ 
+  return (
+    <div className="flex items-center gap-2">
+      <img src={avatar} className="h-8 w-8 rounded-full" />
+      <div className="flex flex-col leading-none">
+        <span className="font-semibold">{name}</span>
+        <span className="text-grey text-sm">{address}</span>
+      </div>
+    </div>
+  )
+}
+ENS resolution always starts from L1 regardless of the chain the user is connected to. This is why we specify chainId: 1 for Ethereum Mainnet in the wagmi hooks above.
+
+Text Record Lookups
+
+nick.eth
+Key	Value
+url	https://ens.domains/
+com.github	arachnid
+com.twitter	nicksdjohnson
+description	Lead developer of ENS & Ethereum Foundation alum. Certified rat tickler. he/him.
+
+useEnsTexts.ts
+
+import { useQuery } from '@tanstack/react-query'
+import { usePublicClient } from 'wagmi'
+ 
+export type UseEnsTextsProps = {
+  name: string
+  keys: string[]
+}
+ 
+export function useEnsTexts({ name, keys }: UseEnsTextsProps) {
+  const wagmiClient = usePublicClient({ chainId: 1 })
+ 
+  return useQuery({
+    queryKey: ['ens-texts', name, keys],
+    queryFn: async () => {
+      const promises = keys.map((key) => wagmiClient!.getEnsText({ name, key }))
+      const results = await Promise.all(promises)
+ 
+      return keys.map((key, index) => ({ key, value: results[index] }))
+    },
+  })
+}
+
+
+TextRecords.tsx
+import { useEnsAvatar } from 'wagmi'
+ 
+import { UseEnsTextsProps, useEnsTexts } from '../hooks/useEnsTexts'
+import { Table } from './ui/Table'
+ 
+export const TextRecords = ({ name, keys }: UseEnsTextsProps) => {
+  const { data: avatar } = useEnsAvatar({ name, chainId: 1 })
+  const { data: texts } = useEnsTexts({ name, keys })
+ 
+  return (
+    <>
+      <div className="mb-4 flex items-center gap-2">
+        <img
+          src={avatar || '/img/fallback-avatar.svg'}
+          className="h-8 w-8 rounded"
+        />
+        <span className="font-semibold">{name}</span>
+      </div>
+ 
+      <Table
+        columns={['Key', 'Value']}
+        rows={texts?.map(({ key, value }) => [key, value]) || []}
+      />
+    </>
+  )
+}
+
+
+
+Address Record Lookups
+While ENS resolution always starts from Ethereum L1, you can store addresses for other chains in ENS records.
+
+
+gregskril.eth
+CoinType	Address
+60	0x179a862703a4adfb29896552df9e307980d19285
+2147483658	0x179a862703a4adfb29896552df9e307980d19285
+2147492101	0x179a862703a4adfb29896552df9e307980d19285
+2147525809	0x179a862703a4adfb29896552df9e307980d19285
+AddressRecords.tsx
+
+
+import { useEnsAvatar } from 'wagmi'
+ 
+import { UseEnsAddressesProps, useEnsAddresses } from '../hooks/useEnsAddresses'
+import { Table } from './ui/Table'
+ 
+export const AddressRecords = ({ name, coinTypes }: UseEnsAddressesProps) => {
+  const { data: avatar } = useEnsAvatar({ name, chainId: 1 })
+  const { data: addresses } = useEnsAddresses({ name, coinTypes })
+ 
+  return (
+    <>
+      <div className="mb-4 flex items-center gap-2">
+        <img
+          src={avatar || '/img/fallback-avatar.svg'}
+          className="h-8 w-8 rounded"
+        />
+        <span className="font-semibold">{name}</span>
+      </div>
+ 
+      <Table
+        columns={['CoinType', 'Address']}
+        rows={
+          addresses?.map(({ coinType, address }) => [coinType, address]) || []
+        }
+      />
+    </>
+  )
+}
+
+
+useEnsAddresses.ts:
+import { useQuery } from '@tanstack/react-query'
+import { usePublicClient } from 'wagmi'
+ 
+export type UseEnsAddressesProps = {
+  name: string
+  coinTypes: number[]
+}
+ 
+export function useEnsAddresses({ name, coinTypes }: UseEnsAddressesProps) {
+  const client = usePublicClient({ chainId: 1 })
+ 
+  return useQuery({
+    queryKey: ['ens-addresses', name, coinTypes],
+    queryFn: async () => {
+      const promises = coinTypes.map((coinType) =>
+        client!.getEnsAddress({ name, coinType })
+      )
+ 
+      const results = await Promise.all(promises)
+ 
+      return coinTypes.map((coinType, index) => ({
+        coinType,
+        address: results[index],
+      }))
+    },
+  })
+}
+
+
+
+
+Address Lookup
+Learn how to resolve blockchain addresses from human-readable names with ENS.
+The ENS Protocol aims to make it easy to use Ethereum. It does this by providing a simple way to use human-readable names instead of long machine-readable addresses.
+
+Getting the users Ethereum Address
+The goal here is to take a name, such as nick.eth, and convert it to an address, such as 0x225f137127d9067788314bc7fcc1f36746a3c3B5.
+
+
+nick.eth
+0xb8c2...67d5
+The simplest thing you can do is start with a name, and resolve it to an address. We call this a "forward lookup". Think of places where users can enter names, such as sending transactions, chatting, etc.
+
+Note that all dot-separated strings should be treated as potential ENS names, since ENS supports many TLDs. A common mistake is to only treat strings that end in .eth as ENS names.
+
+Wagmi
+Ethers.js
+Viem
+web3.py
+ethers-rs
+go-ens
+ensjs
+nethereum
+
+import { useAccount, useEnsAvatar, useEnsName } from 'wagmi'
+ 
+export const Name = () => {
+  const { data: ensName } = useEnsAddress({
+    address: 'luc.eth', // The name to lookup
+    chainId: 1, // The chain to start resolution on (Ethereum Mainnet or a testnet)
+  })
+ 
+  return <div>{ensName || address}</div>
+}
+To learn what happens under the hood when you do a forward lookup, read the resolution section.
+
+Multi-Chain Addresses (BTC, LTC, etc)
+ENS Names aren't just limited to storing Ethereum addresses. Any blockchain address (BTC, LTC, SOL, etc.) can be queried by SLIP-0044 coin type or a value derived from an EVM Chain ID (specified in ENSIP-11). This includes Ethereum L2 networks such as OP Mainnet and Base.
+
+For EVM Chains besides Ethereum Mainnet, always use its ENSIP-11 coin type, irrespective of being included in SLIP-0044 (like Ether Classic).
+
+The standardization of multichain addresses was first introduced in ENSIP-9, and also EIP-2304.
+
+Regardless of the chain you're resolving an address for, ENS resolution always starts from Ethereum L1.
+
+Wagmi
+Viem
+Ethers.js
+web3.py (Python)
+
+// https://wagmi.sh/react/api/hooks/useEnsAddress
+import { useEnsAddress } from 'wagmi'
+import { arbitrum, base } from 'wagmi/chains'
+ 
+const name = 'gregskril.eth'
+ 
+const evmChainIdToCoinType = (chainId: number) => {
+  return (0x80000000 | chainId) >>> 0
+}
+ 
+export const MyAddresses = () => {
+  // SLIP-0044 Coin Types (see ENSIP-9)
+  const { data: bitcoinAddr } = useEnsAddress({ name, coinType: 0, chainId: 1 })
+  const { data: solanaAddr } = useEnsAddress({
+    name,
+    coinType: 501,
+    chainId: 1,
+  })
+ 
+  // EVM Chain IDs (see ENSIP-11)
+  const { data: baseAddr } = useEnsAddress({
+    name,
+    coinType: evmChainIdToCoinType(base.id),
+    chainId: 1,
+  })
+  const { data: arbitrumAddr } = useEnsAddress({
+    name,
+    coinType: evmChainIdToCoinType(arbitrum.id),
+    chainId: 1,
+  })
+ 
+  return (
+    <div>
+      {JSON.stringify({ bitcoinAddr, solanaAddr, baseAddr, arbitrumAddr })}
+    </div>
+  )
+}
+Network	Coin Type
+Bitcoin	0
+Litecoin	2
+Dogecoin	3
+Ethereum	60
+Solana	501
+OP Mainnet	2147483658
+Polygon	2147483785
+Base	2147492101
+Arbitrum One	2147525809
+... and many many more following SLIP-0044 and ENSIP-11
+
+Decoding Address Hashes
+ENS resolvers store all addresses in bytes, which may have to be encoded to their respective address formats. To do this, we recommend using the @ensdomains/address-encoder package.
+
+
+
+ENS CODES:
+import { getDefaultConfig } from '@rainbow-me/rainbowkit';
+import {
+  arbitrum,
+  base,
+  mainnet,
+  optimism,
+  polygon,
+  sepolia,
+} from 'wagmi/chains';
+
+export const config = getDefaultConfig({
+  appName: 'RainbowKit demo',
+  projectId: 'YOUR_PROJECT_ID',
+  chains: [
+    mainnet,
+    polygon,
+    optimism,
+    arbitrum,
+    base,
+    ...(process.env.NEXT_PUBLIC_ENABLE_TESTNETS === 'true' ? [sepolia] : []),
+  ],
+  ssr: true,
+});
+
+
+'use client';
+
+import type React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { WagmiProvider } from 'wagmi';
+import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
+
+import { config } from '../wagmi';
+
+const queryClient = new QueryClient();
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider>{children}</RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
+  );
+}
+
+
+
+Text Records
+Text records are key-value pairs that can be used to store any arbitrary data associated with a name. Think of this as a user's digital backpack utilized for the storage of preferences, public details, and more.
+
+
+nick.eth
+Key	Value
+description	Lead developer of ENS & Ethereum Foundation alum. Certified rat tickler. he/him.
+com.twitter	nicksdjohnson
+com.github	arachnid
+The most popular records have been standardised. One example of a standardised record is the avatar record which is used to store a user's profile picture.
+
+Getting Records
+To fetch the record for a specific name, you can use one of the following methods:
+
+Wagmi
+Ethers
+Viem
+web3.py
+Go
+
+// https://wagmi.sh/react/api/hooks/useEnsText
+import { normalize } from 'viem/ens'
+import { useEnsText } from 'wagmi'
+ 
+export const MyProfile: FC<{ name: string }> = ({ name }) => {
+  const { data } = useEnsText({
+    name: normalize('nick.eth'),
+    key: 'com.twitter',
+  })
+ 
+  return (
+    <div>
+      <span>Twitter: {data}</span>
+    </div>
+  )
+}
+Types of Records
+ENSIP-5 and ENSIP-18 specify two sets of records that are considered standardized. Below are some of the most commonly ones:
+
+Name	Usage	Reference	Example
+avatar	Avatar	ENSIP-5	eip155:1/erc1155:0x495f...
+description	Bio or description of the profile	ENSIP-5	Lead developer of ENS
+com.twitter	Twitter/X handle	ENSIP-5	nicksdjohnson
+com.github	GitHub handle	ENSIP-5	arachnid
+url	Website URL	ENSIP-5	https://ens.domains
+header	Image URL to be used as a header/banner	ENSIP-18	ipfs://QmNtHN7WE...
+Custom Records
+While standardized records are expected to have the best ecosystem support, it's possible to store any key-value pair you desire. We generally recommend to stick to a pattern, or prefix things with your app or protocol (eg. com.discord, or org.reddit), as such to avoid collisions.
+
+Setting Records
+Text records are controlled by the resolver associated with a given name. Read more about interacting with a resolver.
+
+
+
+@ensdomains/address-encoder
+A cryptocurrency address encoder/decoder in TypeScript
+
+Text-format addresses are decoded into their native binary representations, and vice-versa. In the case of Bitcoin-derived chains, this means their scriptPubKey; for Ethereum-derived chains this is their hash.
+
+This library was written for use with EIP 2304, but may be useful for anyone looking for a general purpose cryptocurrency address codec.
+
+EVM compatible chains are either specified using SLIP44 coinType or 0x80000000 | chainId where 0x80000000 is msb (most significant bit) reserved at SLIP44 and no coin types exist in that range. This is to avoid number colision with th existing coin types.
+
+Please read the specification page for the more detail
+
+Installation
+bun add @ensdomains/address-encoder
+Getting Started
+// Import coder getter
+import { getCoderByCoinName } from "@ensdomains/address-encoder";
+
+// Get the coder for the address you want to encode/decode
+const btcCoder = getCoderByCoinName("btc");
+
+// Decode the address
+const decodedAddress = btcCoder.decode("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa");
+// Uint8Array(25) [ 118, 169, 20, 98, 233, 7, 177, 92, 191, 39, 213, 66, 83, 153, 235, 246, 240, 251, 80, 235, 184, 143, 24, 136, 172 ]
+
+// Encode the address
+const encodedAddress = btcCoder.encode(decodedAddress);
+// 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+Hex String Encoding
+If the data you are encoding is a hex string rather than Uint8Array, you can use the included hexToBytes() to convert it to the correct type.
+
+import { getCoderByCoinName } from "@ensdomains/address-encoder";
+import { hexToBytes } from "@ensdomains/address-encoder/utils";
+
+const btcCoder = getCoderByCoinName("btc");
+
+// Convert hex encoded data to bytes
+const dataAsBytes = hexToBytes(
+  "0x76a91462e907b15cbf27d5425399ebf6f0fb50ebb88f1888ac"
+);
+// Uint8Array(25) [ 118, 169, 20, 98, 233, 7, 177, 92, 191, 39, 213, 66, 83, 153, 235, 246, 240, 251, 80, 235, 184, 143, 24, 136, 172 ]
+
+// Pass bytes to encoder
+const encodedAddress = btcCoder.encode(dataAsBytes);
+// 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+Supported Cryptocurrencies
+To view all the supported cryptocurrencies of this library, see here.
+
+Additional Functionality
+Async Coder Getter
+import { getCoderByCoinNameAsync } from "@ensdomains/address-encoder/async";
+
+const btcCoder = await getCoderByCoinNameAsync("btc");
+Individual Coin Imports
+import { btc } from "@ensdomains/address-encoder/coins";
+
+const decodedAddress = btc.decode("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa");
+const encodedAddress = btc.encode(decodedAddress);
+Individual Coder Function Imports
+import {
+  decodeBtcAddress,
+  encodeBtcAddress,
+} from "@ensdomains/address-encoder/coders";
+
+const decodedAddress = decodeBtcAddress("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa");
+const encodedAddress = encodeBtcAddress(decodedAddress);
+EVM Chains
+There are a variety of EVM chains supported, however none of them (except for ETH) are exported from coins or coders. If you want to individually import for an EVM chain, you can just use the eth import as a replacement.
+
+
+
+Text Records
+Text records are key-value pairs that can be used to store any arbitrary data associated with a name. Think of this as a user's digital backpack utilized for the storage of preferences, public details, and more.
+
+
+nick.eth
+Key	Value
+description	Lead developer of ENS & Ethereum Foundation alum. Certified rat tickler. he/him.
+com.twitter	nicksdjohnson
+com.github	arachnid
+The most popular records have been standardised. One example of a standardised record is the avatar record which is used to store a user's profile picture.
+
+Getting Records
+To fetch the record for a specific name, you can use one of the following methods:
+
+Wagmi
+Ethers
+Viem
+web3.py
+Go
+
+// https://wagmi.sh/react/api/hooks/useEnsText
+import { normalize } from 'viem/ens'
+import { useEnsText } from 'wagmi'
+ 
+export const MyProfile: FC<{ name: string }> = ({ name }) => {
+  const { data } = useEnsText({
+    name: normalize('nick.eth'),
+    key: 'com.twitter',
+  })
+ 
+  return (
+    <div>
+      <span>Twitter: {data}</span>
+    </div>
+  )
+}
+Types of Records
+ENSIP-5 and ENSIP-18 specify two sets of records that are considered standardized. Below are some of the most commonly ones:
+
+Name	Usage	Reference	Example
+avatar	Avatar	ENSIP-5	eip155:1/erc1155:0x495f...
+description	Bio or description of the profile	ENSIP-5	Lead developer of ENS
+com.twitter	Twitter/X handle	ENSIP-5	nicksdjohnson
+com.github	GitHub handle	ENSIP-5	arachnid
+url	Website URL	ENSIP-5	https://ens.domains
+header	Image URL to be used as a header/banner	ENSIP-18	ipfs://QmNtHN7WE...
+Custom Records
+While standardized records are expected to have the best ecosystem support, it's possible to store any key-value pair you desire. We generally recommend to stick to a pattern, or prefix things with your app or protocol (eg. com.discord, or org.reddit), as such to avoid collisions.
+
+Setting Records
+Text records are controlled by the resolver associated with a given name. Read more about interacting with a resolver.
+
+
+Avatars
+Personalization of profiles is what makes identity great. This page covers the very special avatar record that enables users to take their avatar with them across the web.
+
+
+nick.eth
+Getting the user's Avatar
+Avatars are an awesome way for users to express themselves. To get the user's avatar, all you need is their name. If you only have their address, see primary names. The following code snippets let you get the avatar for a user.
+
+Wagmi
+Ethers
+Viem
+Web3.py
+Go
+
+// https://wagmi.sh/react/hooks/useEnsAvatar
+import { useEnsAvatar } from 'wagmi'
+ 
+function App() {
+  const { data: ensAvatar } = useEnsAvatar({
+    address: 'nick.eth',
+    chainId: 1, // (1 = Ethereum Mainnet, 11155111 = Sepolia)
+  })
+ 
+  return (
+    <img
+      src={ensAvatar || 'https://avatars.jakerunzer.com/nick.eth'}
+      alt="nick.eth"
+    />
+  )
+}
+The Metadata Service
+The metadata service is run by ENS Labs. It is a free service web service that allows you to retrieve the avatar of an ENS name via a web request, as opposed to adding extra logic to your application and interacting with an ethereum node. This is of course centralised and should be used if absolutely necessary.
+
+What exactly is an Avatar Record?
+An avatar record is simply a text record that has "avatar" as its key and a URI as its value, with some rules about what URI schemes are supported and how to process them. For more info, see ENSIP-11.
+
+Supported URI schemes
+Clients are expected to support a number of URI schemas, which aren't always web URIs, so the final result you see in your application will vary depending on how the library you are using has decided to handle avatar records.
+
+http(s): - URI Scheme for HTTP(S) URLs. Libraries will most likely return the result directly.
+ipfs: - URI scheme for IPFS hashes. Libraries may decide to fetch the result from a public gateway for you.
+data: - URI Scheme for data URIs. Libraries will most likely return the result directly.
+eip155: - The URI scheme for EIP-155 identifiers for linking to NFTs on Ethereum based chains. A little complicated to resolve manually, most libraries should resolve this for you and return the underlying resource.
+For EIP-155 NFT Avatars the nft must be owned by the wallet address the ENS name resolves to. This is done by checking the ownerOf method on the NFT contract.
+
+Common schemes that aren't officially supported
+ethereum: - The URI scheme for Ethereum addresses
+bzz: - The URI scheme for Swarm hashes
+File Information
+Avatars come in many different shapes and sizes. Not just the above URI schemas, but also in different file formats, sizes, and more. Although standards exist for some of these, files are not required to follow these standards.
+
+Below is some information about the avatars your app might be loading.
+
+FileProperty:	Info/Recommendation
+File Extension	Mostly png, jpeg, jpg, webp, gif, webm, but could be anything
+File Size	We recommend having sensible timeouts
+Aspect Ratio	We recommend object-fit: cover or setting a background color
+Transparency	We recommend setting a background color as some images may contain transparency
+Luckily most browsers and network libraries have default timeouts to start with, we highly recommend that if you are doing any manual avatar downloading or fetching you add a sensible timeout.
+
+
+
+Primary Names
+Primary names are now supported on both Ethereum Mainnet and popular L2s (Base, OP Mainnet, Arbitrum One, Scroll, and Linea). This enables users to have an end-to-end experience with ENS on their preferred L2!
+
+A "primary name" is the result of a bi-directional relationship between an EVM address and a human-readable ENS name. The two directions are:
+
+Name -> Address (forward resolution)
+Address -> Name (reverse resolution)
+The outcome of this relationship makes it safe for applications to display ENS names instead of EVM addresses, leading to a better user experience.
+
+0xb8c...67d5
+to
+
+nick.eth
+While forward resolution is configured in Resolvers, reverse records are typically set via smart contracts called Reverse Registrars which you can read more about below.
+
+L2 Primary Names
+Before we dive into code examples, let's first understand why things work the way they do.
+
+Prior to August 2025, ENS users had to make a transaction on Ethereum Mainnet (L1) to set a primary name. More specifically, they had to set a reverse record on the Reverse Registrar contract which was only available on L1.
+
+What is the difference between a reverse record and a primary name?
+A reverse record is a mapping from an EVM address to an ENS name, which is only part of a primary name. In order for a primary name to be valid, the name must also forward resolve to the same address on the respective chain.
+
+Since a majority of user activity is now on L2s, we've added the ability to set a reverse record on the following Ethereum Rollups:
+
+Arbitrum
+Base
+Linea
+OP Mainnet
+Scroll
+In addition to these chains, we've also added the ability to set a default reverse record on Ethereum Mainnet (L1) that serves as a fallback when no chain-specific primary name is set. This is the simplest way to set a universal primary name for users who have a wallet that supports all EVM chains.
+
+While this may sound simple in theory, it's easy to get tripped on the details in practice. Let's look at an example.
+
+Understanding the Verification Process
+The key thing to understand is that the forward address for a given chain must match the reverse record on the respective chain's reverse registrar.
+
+Say I own nick.eth. The name resolves to 0x1234...5678 because I've set the ETH address for that name. I call setName("nick.eth") on the Base reverse registrar, and I expect that my primary name is now nick.eth on Base. But that's actually not the case.
+
+ENS names can resolve to different addresses on different chains, and since nick.eth in the example above has only specified an Ethereum Mainnet address, the verification process will fail. In order to fix this, I need to set the Base address for nick.eth which is on L1 in this case. This is done by calling the following function on the resolver for the name.
+
+
+setAddr(
+  namehash("nick.eth"), // node (see Name Processing)
+  convertEVMChainIdToCoinType(8453), // coinType (see ENSIP-11)
+  0x1234...5678 // the address to set
+)
+Now that nick.eth resolves to 0x1234...5678 via the Base cointype, and name(0x1234...5678) on the Base reverse registrar returns nick.eth, my primary name is fully set.
+
+An alternative approach, which would be more efficient in this case, is to set the default EVM address for nick.eth on the latest public resolver, and the default reverse record to nick.eth on the default reverse registrar. This would allow the name to resolve to the correct address on all chains.
+
+Getting a Primary Name
+Important: After retrieving a name from reverse resolution, you must verify it by performing a forward resolution on that name to confirm it still resolves to the original address. This prevents spoofing or misconfiguration. If the addresses don't match, display the original address instead of the name.
+
+Looking up a users primary name is very simple. In most web3 libraries (wagmi, viem, ethers, web3py, etc.), you will find a built-in function to do a lookup by address as shown below. In most cases, the library will handle the verification for you.
+
+As of August 12, 2025, no library has been updated to support L2 Primary Names. Refer to this temporary reference implementation.
+
+Remember that in all cases, ENS resolution always starts from Ethereum Mainnet.
+
+Wagmi
+Ethers v5
+Viem
+Web3.py
+Go
+
+// https://wagmi.sh/react/hooks/useEnsName
+import { useEnsName } from 'wagmi'
+import { mainnet } from 'wagmi/chains'
+ 
+export const Name = () => {
+  const { data: name } = useEnsName({
+    address: '0xb8c2C29ee19D8307cb7255e1Cd9CbDE883A267d5',
+    chainId: mainnet.id, // resolution always starts from L1
+  })
+ 
+  return <div>Name: {name}</div>
+}
+🎉 And that's it! Now you can turn all your pages from this, to this:
+
+0xb8c2...67d5
+sent 0.1 ETH to
+0xd8dA....6045
+turns into
+nick.eth
+sent 0.1 ETH to
+vitalik.eth
+If you're a library developer looking to implement this functionality, we recommend using the Universal Resolver. It's a utility contract that greatly simplifies the process of resolving a name.
+
+Setting Primary Names
+Since primary names require two-way resolution, there are technically two steps to setting it up. Let's say that user 0x1234...5678 wants to set their primary name on Base to nick.eth.
+
+First, the user would need to set the Base address for nick.eth to 0x1234...5678. Read more about multichain addresses to understand how this works.
+
+Next, the user would need to set the reverse record for 0x1234...5678 to nick.eth in the Base Reverse Registrar. Read more about reverse records to understand how this works.
+
+In order to avoid doing this manually for multiple chains, the user can set their default reverse record to nick.eth on the default reverse registrar, and their default EVM address to 0x1234...5678 on the latest public resolver.
+
+Reverse Registrars
+Learn more about the smart contracts that manage reverse records on L1 and L2s.
+
+
+
+Reverse Registrars
+Reverse resolution is part of the primary name feature. If you're just trying to fetch a name for an address, you should start there.
+
+Reverse resolution is the process of mapping an EVM address (eg, 0x1234...5678) to an ENS name on a number of different chains. This is accomplished by using special namespaces in the ENS registry:
+
+Reverse Namespace	Name in the ENS registry
+Default (Ethereum)	reverse
+Ethereum	addr.reverse
+Arbitrum	8000a4b1.reverse
+Base	80002105.reverse
+Linea	8000e708.reverse
+Optimism	8000000a.reverse
+Scroll	80082750.reverse
+L2 namespaces are derived via [coinTypeAsHex].reverse as specified in ENSIP-19, and users' reverse records can be resolved via [address].[reverseNamespace].
+
+For example, the account 0xb8c2C29ee19D8307cb7255e1Cd9CbDE883A267d5 can claim b8c2c29ee19d8307cb7255e1cd9cbde883a267d5.addr.reverse in the ENS registry. After doing so, it can configure a resolver and expose metadata, such as a canonical ENS name for this address.
+
+The reverse registrar provides functions to claim a reverse record, as well as a convenience function (setName) to configure the record as it's most commonly used, as a way of specifying a canonical name for an address.
+
+Supported Chains
+Reverse Registrars are deployed on Ethereum Mainnet (L1) and popular L2s (Base, OP Mainnet, Arbitrum One, Scroll, and Linea). This enables users to set a chain-specific reverse record while also supporting a default reverse record on L1 that acts as a fallback when a chain-specific record is not set.
+
+In practice, it's strongly recommended to not hardcode the reverse registrar addresses because they can change in the future and unexpectedly break your application. Instead, resolve them according to ENSIP-19.
+
+For convenience, the latest deployments of the reverse registrars are listed below.
+
+Mainnet Deployments
+Chain	Address
+Default (Ethereum)	0x283F227c4Bd38ecE252C4Ae7ECE650B0e913f1f9
+Ethereum	0xa58E81fe9b61B5c3fE2AFD33CF304c454AbFc7Cb
+Arbitrum One	0x0000000000D8e504002cC26E3Ec46D81971C1664
+Base	0x0000000000D8e504002cC26E3Ec46D81971C1664
+Linea	0x0000000000D8e504002cC26E3Ec46D81971C1664
+Optimism	0x0000000000D8e504002cC26E3Ec46D81971C1664
+Scroll	0x0000000000D8e504002cC26E3Ec46D81971C1664
+Testnet Deployments
+L2 Testnet Chain	Address
+Default (Ethereum)	0x4F382928805ba0e23B30cFB75fC9E848e82DFD47
+Ethereum	0xA0a1AbcDAe1a2a4A2EF8e9113Ff0e02DD81DC0C6
+Arbitrum Sepolia	0x00000BeEF055f7934784D6d81b6BC86665630dbA
+Base Sepolia	0x00000BeEF055f7934784D6d81b6BC86665630dbA
+Linea Sepolia	0x00000BeEF055f7934784D6d81b6BC86665630dbA
+Optimism	0x00000BeEF055f7934784D6d81b6BC86665630dbA
+Scroll Sepolia	0x00000BeEF055f7934784D6d81b6BC86665630dbA
+Setting Records
+The updated Reverse Registrar interface exposes methods to support that make it easier to set a reverse record for an EOA or smart contract:
+
+
+/// @notice Sets the `name()` record for the reverse ENS record associated with the calling account.
+/// @param name The name to set
+/// @return The ENS node hash of the reverse record
+function setName(string memory name) external returns (bytes32);
+ 
+/// @notice Sets the `name()` record for the reverse ENS record associated with the addr provided account.
+///         Can be used if the addr is a contract that is owned by an SCA.
+/// @param addr The address to set the name for
+/// @param name The name to set
+/// @return The ENS node hash of the reverse record
+function setNameForAddr(
+    address addr,
+    string memory name
+) external returns (bytes32);
+ 
+/// @notice Sets the `name()` record for the reverse ENS record associated with the contract provided that is owned with `Ownable`.
+/// @param contractAddr The address of the contract to set the name for (implementing Ownable)
+/// @param owner The owner of the contract (via Ownable)
+/// @param name The name to set
+/// @param coinTypes The coin types to set. Must be inclusive of the coin type for the contract
+/// @param signatureExpiry The expiry of the signature
+/// @param signature The signature of an address that will return true on isValidSignature for the owner
+/// @return The ENS node hash of the reverse record
+function setNameForOwnableWithSignature(
+    address contractAddr,
+    address owner,
+    string calldata name,
+    uint256[] memory coinTypes,
+    uint256 signatureExpiry,
+    bytes calldata signature
+) external returns (bytes32);
+ 
+/// @notice Sets the `name()` record for the reverse ENS record associated with the addr provided account using a signature.
+/// @param addr The address to set the name for
+/// @param name The name of the reverse record
+/// @param coinTypes The coin types to set. Must be inclusive of the coin type for the contract
+/// @param signatureExpiry Date when the signature expires
+/// @param signature The signature from the addr
+/// @return The ENS node hash of the reverse record
+function setNameForAddrWithSignature(
+    address addr,
+    string calldata name,
+    uint256[] calldata coinTypes,
+    uint256 signatureExpiry,
+    bytes calldata signature
+) external returns (bytes32);
+Signatures
+Signature format for setNameForAddrWithSignature:
+
+
+validatorAddress, // the address of the reverse registrar
+functionSignature, // 0x2023a04c
+name, // string name value
+addr, // address to set name for
+coinTypes, // array of coinTypes wanting to be set
+signatureExpiry // expiry of the signature, up to 1 hour in the future
+Signature format for setNameForOwnableWithSignature:
+
+
+validatorAddress, // the address of the reverse registrar
+functionSignature, // 0x975713ad
+name, // string name value
+contractAddr, // contract address to set name for
+owner, // owner address of contract (i.e. the signature being verified)
+coinTypes, // array of coinTypes wanting to be set
+signatureExpiry // expiry of the signature, up to 1 hour in the future
+Other Functions
+The following functions are only available on the ETH Reverse Registrar.
+
+Claim Address
+
+function claim(address owner) public returns (bytes32);
+Claims the caller's address in the reverse registrar, assigning ownership of the reverse record to owner. Equivalent to calling claimWithResolver(owner, 0). Doesn't actually set the reverse record.
+
+
+function claimWithResolver(address owner, address resolver) public returns (bytes32)
+Claims the caller's address in the reverse registrar, assigning ownership of the reverse record to owner. If resolver is nonzero, also updates the record's resolver.
+
+After calling this function:
+
+The reverse record for the caller (1234....addr.reverse) is owned by owner.
+If resolver is nonzero, the reverse record for the caller has its resolver set to resolver; otherwise it is left unchanged.
+Get Default Resolver
+
+function defaultResolver() public view returns (address);
+Returns the address of the resolver contract that the ReverseRegistrar uses for setName.
+
+Do's and Dont's
+Under no situation is it recommended to force a user to change their primary name, nor doing so without clearly notifying the user of what the transaction they are about to execute could modify.
+
+Doing so could be seen as hostile or undesired behaviour by end users and might degrade their experience with your app.
+
+
+
+Subgraph
+This is a page covering the graph's ENS subgraph. The ENS subgraph indexes onchain events of second-level .eth names, and DNS imported names. It allows us to build a reasonable approximation of the ENS names an address owns.
+
+To read more about why not all names (such as Offchain & Gasless Names) show up in the subgraph read the listing names page.
+
+The Graph
+The Graph is a protocol for indexing and querying data from blockchains. There are multiple subgraphs that you can use to query information about ENS names. These subgraphs are available for mainnet, sepolia and holesky.
+
+Developers are welcome to use our rate limited API endpoints above for testing, but it is highly encouraged to sign up for a free account with TheGraph to get your own API key.
+
+GraphQL Schema
+The schema for the ENS subgraph is defined in /schema.graphql.
+
+Use Cases
+There are certain use cases where the graph is better for querying ENS specific information than through the resolution process. One of such use-cases is querying which NFT names are owned by a specific address.
+
+Example Queries
+One can explore the following examples interactively via the Graph Explorer Playground
+
+Getting a list of names owned by an account
+Ensure the address is lowercase
+
+
+query getDomainsForAccount {
+  domains(where: { owner: "0xa508c16666c5b8981fa46eb32784fccc01942a71" }) {
+    name
+  }
+}
+Getting the top domain for an account based on the longest registry
+
+query getDomainForAccount {
+  account(id: "0xa508c16666c5b8981fa46eb32784fccc01942a71") {
+    registrations(first: 1, orderBy: expiryDate, orderDirection: desc) {
+      domain {
+        name
+      }
+    }
+    id
+  }
+}
+returns
+
+
+{
+  "data": {
+    "account": {
+      "registrations": [
+        {
+          "domain": {
+            "name": "datanexus.eth"
+          }
+        }
+      ],
+      "id": "0xa508c16666c5b8981fa46eb32784fccc01942a71"
+    }
+  }
+}
+Searching for a subdomain
+
+query getSubDomains($Account: String = "messari.eth") {
+  domains(where: { name: "messari.eth" }) {
+    name
+    id
+    subdomains(first: 10) {
+      name
+    }
+    subdomainCount
+  }
+}
+returns
+
+
+{
+  "data": {
+    "domains": [
+      {
+        "name": "messari.eth",
+        "id": "0x498ada62251a1227664ace8d97b0de2dcc6652ddf61e6fb5d3150f43ccf599e6",
+        "subdomains": [
+          {
+            "name": "subgraphs.messari.eth"
+          },
+          {
+            "name": "bd.messari.eth"
+          }
+        ],
+        "subdomainCount": 2
+      }
+    ]
+  }
+}
+Getting the expiry of an ENS domain
+
+query getDomainExp($Account: String = "paulieb.eth") {
+  registrations(
+    where: { domain_: { name: $Account } }
+    first: 1
+    orderBy: expiryDate
+    orderDirection: desc
+  ) {
+    expiryDate
+  }
+}
+returns
+
+
+{
+  "data": {
+    "registrations": [
+      {
+        "expiryDate": "1714752524"
+      }
+    ]
+  }
+}
+
+
+schema.graphql:
+type Domain @entity {
+  "The namehash of the name"
+  id: ID!
+  "The human readable name, if known. Unknown portions replaced with hash in square brackets (eg, foo.[1234].eth)"
+  name: String
+  "The human readable label name (imported from CSV), if known"
+  labelName: String
+  "keccak256(labelName)"
+  labelhash: Bytes
+  "The namehash (id) of the parent name"
+  parent: Domain
+  "Can count domains from length of array"
+  subdomains: [Domain!]! @derivedFrom(field: "parent")
+  "The number of subdomains"
+  subdomainCount: Int!
+  "Address logged from current resolver, if any"
+  resolvedAddress: Account
+
+  "The resolver that controls the domain's settings"
+  resolver: Resolver
+  "The time-to-live (TTL) value of the domain's records"
+  ttl: BigInt
+
+  "Indicates whether the domain has been migrated to a new registrar"
+  isMigrated: Boolean!
+  "The time when the domain was created"
+  createdAt: BigInt!
+
+  "The account that owns the domain"
+  owner: Account!
+  "The account that owns the ERC721 NFT for the domain"
+  registrant: Account
+  "The account that owns the wrapped domain"
+  wrappedOwner: Account
+
+  "The expiry date for the domain, from either the registration, or the wrapped domain if PCC is burned"
+  expiryDate: BigInt
+
+  "The registration associated with the domain"
+  registration: Registration @derivedFrom(field: "domain")
+  "The wrapped domain associated with the domain"
+  wrappedDomain: WrappedDomain @derivedFrom(field: "domain")
+
+  "The events associated with the domain"
+  events: [DomainEvent!]! @derivedFrom(field: "domain")
+}
+
+interface DomainEvent {
+  "The unique identifier of the event"
+  id: ID!
+  "The domain name associated with the event"
+  domain: Domain!
+  "The block number at which the event occurred"
+  blockNumber: Int!
+  "The transaction hash of the transaction that triggered the event"
+  transactionID: Bytes!
+}
+
+type Transfer implements DomainEvent @entity {
+  "The unique identifier of the event"
+  id: ID!
+  "The domain name associated with the event"
+  domain: Domain!
+  "The block number at which the event occurred"
+  blockNumber: Int!
+  "The transaction hash of the transaction that triggered the event"
+  transactionID: Bytes!
+  "The account that owns the domain after the transfer"
+  owner: Account!
+}
+
+type NewOwner implements DomainEvent @entity {
+  "The unique identifier of the event"
+  id: ID!
+  "The parent domain of the domain name associated with the event"
+  parentDomain: Domain!
+  "The domain name associated with the event"
+  domain: Domain!
+  "The block number at which the event occurred"
+  blockNumber: Int!
+  "The transaction hash of the transaction that triggered the event"
+  transactionID: Bytes!
+  "The new account that owns the domain"
+  owner: Account!
+}
+
+type NewResolver implements DomainEvent @entity {
+  "The unique identifier of the event"
+  id: ID!
+  "The domain name associated with the event"
+  domain: Domain!
+  "The block number at which the event occurred"
+  blockNumber: Int!
+  "The transaction hash of the transaction that triggered the event"
+  transactionID: Bytes!
+  "The new resolver contract address associated with the domain"
+  resolver: Resolver!
+}
+
+type NewTTL implements DomainEvent @entity {
+  "The unique identifier of the event"
+  id: ID!
+  "The domain name associated with the event"
+  domain: Domain!
+  "The block number at which the event occurred"
+  blockNumber: Int!
+  "The transaction hash of the transaction that triggered the event"
+  transactionID: Bytes!
+  "The new TTL value (in seconds) associated with the domain"
+  ttl: BigInt!
+}
+
+type WrappedTransfer implements DomainEvent @entity {
+  "The unique identifier of the event"
+  id: ID!
+  "The domain name associated with the event"
+  domain: Domain!
+  "The block number at which the event occurred"
+  blockNumber: Int!
+  "The transaction hash of the transaction that triggered the event"
+  transactionID: Bytes!
+  "The account that owns the wrapped domain after the transfer"
+  owner: Account!
+}
+
+type NameWrapped implements DomainEvent @entity {
+  "The unique identifier of the wrapped domain"
+  id: ID!
+  "The domain name associated with the wrapped domain"
+  domain: Domain!
+  "The block number at which the wrapped domain was wrapped"
+  blockNumber: Int!
+  "The transaction hash of the transaction that wrapped the domain"
+  transactionID: Bytes!
+  "The human-readable name of the wrapped domain"
+  name: String
+  "The number of fuses associated with the wrapped domain"
+  fuses: Int!
+  "The account that owns the wrapped domain"
+  owner: Account!
+  "The expiry date of the wrapped domain registration"
+  expiryDate: BigInt!
+}
+
+type NameUnwrapped implements DomainEvent @entity {
+  "The unique identifier of the event"
+  id: ID!
+  "The domain name associated with the event"
+  domain: Domain!
+  "The block number at which the event occurred"
+  blockNumber: Int!
+  "The transaction hash of the transaction that triggered the event"
+  transactionID: Bytes!
+  "The account that owns the domain after it was unwrapped"
+  owner: Account!
+}
+
+type FusesSet implements DomainEvent @entity {
+  "The unique identifier of the event"
+  id: ID!
+  "The domain name associated with the event"
+  domain: Domain!
+  "The block number at which the event occurred"
+  blockNumber: Int!
+  "The transaction hash of the transaction that triggered the event"
+  transactionID: Bytes!
+  "The number of fuses associated with the domain after the set event"
+  fuses: Int!
+}
+
+type ExpiryExtended implements DomainEvent @entity {
+  "The unique identifier of the event"
+  id: ID!
+  "The domain name associated with the event"
+  domain: Domain!
+  "The block number at which the event occurred"
+  blockNumber: Int!
+  "The transaction hash of the transaction that triggered the event"
+  transactionID: Bytes!
+  "The new expiry date associated with the domain after the extension event"
+  expiryDate: BigInt!
+}
+
+type Registration @entity {
+  "The unique identifier of the registration"
+  id: ID!
+  "The domain name associated with the registration"
+  domain: Domain!
+  "The registration date of the domain"
+  registrationDate: BigInt!
+  "The expiry date of the domain"
+  expiryDate: BigInt!
+  "The cost associated with the domain registration"
+  cost: BigInt
+  "The account that registered the domain"
+  registrant: Account!
+  "The human-readable label name associated with the domain registration"
+  labelName: String
+  "The events associated with the domain registration"
+  events: [RegistrationEvent!]! @derivedFrom(field: "registration")
+}
+
+interface RegistrationEvent {
+  "The unique identifier of the registration event"
+  id: ID!
+  "The registration associated with the event"
+  registration: Registration!
+  "The block number of the event"
+  blockNumber: Int!
+  "The transaction ID associated with the event"
+  transactionID: Bytes!
+}
+
+type NameRegistered implements RegistrationEvent @entity {
+  "The unique identifier of the NameRegistered event"
+  id: ID!
+  "The registration associated with the event"
+  registration: Registration!
+  "The block number of the event"
+  blockNumber: Int!
+  "The transaction ID associated with the event"
+  transactionID: Bytes!
+  "The account that registered the name"
+  registrant: Account!
+  "The expiry date of the registration"
+  expiryDate: BigInt!
+}
+
+type NameRenewed implements RegistrationEvent @entity {
+  "The unique identifier of the NameRenewed event"
+  id: ID!
+  "The registration associated with the event"
+  registration: Registration!
+  "The block number of the event"
+  blockNumber: Int!
+  "The transaction ID associated with the event"
+  transactionID: Bytes!
+  "The new expiry date of the registration"
+  expiryDate: BigInt!
+}
+
+type NameTransferred implements RegistrationEvent @entity {
+  "The ID of the event"
+  id: ID!
+  "The registration associated with the event"
+  registration: Registration!
+  "The block number of the event"
+  blockNumber: Int!
+  "The transaction ID of the event"
+  transactionID: Bytes!
+  "The new owner of the domain"
+  newOwner: Account!
+}
+
+type WrappedDomain @entity {
+  "unique identifier for each instance of the WrappedDomain entity"
+  id: ID!
+  "The domain that is wrapped by this WrappedDomain"
+  domain: Domain!
+  "The expiry date of the wrapped domain"
+  expiryDate: BigInt!
+  "The number of fuses remaining on the wrapped domain"
+  fuses: Int!
+  "The account that owns this WrappedDomain"
+  owner: Account!
+  "The name of the wrapped domain"
+  name: String
+}
+
+type Account @entity {
+  "The unique identifier for the account"
+  id: ID!
+  "The domains owned by the account"
+  domains: [Domain!]! @derivedFrom(field: "owner")
+  "The WrappedDomains owned by the account"
+  wrappedDomains: [WrappedDomain!] @derivedFrom(field: "owner")
+  "The Registrations made by the account"
+  registrations: [Registration!] @derivedFrom(field: "registrant")
+}
+
+type Resolver @entity {
+  "The unique identifier for this resolver, which is a concatenation of the resolver address and the domain namehash"
+  id: ID!
+  "The domain that this resolver is associated with"
+  domain: Domain
+  "The address of the resolver contract"
+  address: Bytes!
+  "The current value of the 'addr' record for this resolver, as determined by the associated events"
+  addr: Account
+  "The content hash for this resolver, in binary format"
+  contentHash: Bytes
+  "The set of observed text record keys for this resolver"
+  texts: [String!]
+  "The set of observed SLIP-44 coin types for this resolver"
+  coinTypes: [BigInt!]
+  "The events associated with this resolver"
+  events: [ResolverEvent!]! @derivedFrom(field: "resolver")
+}
+
+interface ResolverEvent {
+  "Concatenation of block number and log ID"
+  id: ID!
+  "Used to derive relationships to Resolvers"
+  resolver: Resolver!
+  "The block number that the event occurred on"
+  blockNumber: Int!
+  "The transaction hash of the event"
+  transactionID: Bytes!
+}
+
+type AddrChanged implements ResolverEvent @entity {
+  "Unique identifier for this event"
+  id: ID!
+  "The resolver associated with this event"
+  resolver: Resolver!
+  "The block number at which this event occurred"
+  blockNumber: Int!
+  "The transaction ID for the transaction in which this event occurred"
+  transactionID: Bytes!
+  "The new address associated with the resolver"
+  addr: Account!
+}
+
+type MulticoinAddrChanged implements ResolverEvent @entity {
+  "Unique identifier for the event"
+  id: ID!
+  "Resolver associated with this event"
+  resolver: Resolver!
+  "Block number in which this event was emitted"
+  blockNumber: Int!
+  "Transaction ID in which this event was emitted"
+  transactionID: Bytes!
+  "The coin type of the changed address"
+  coinType: BigInt!
+  "The new address value for the given coin type"
+  addr: Bytes!
+}
+
+type NameChanged implements ResolverEvent @entity {
+  "Concatenation of block number and log ID"
+  id: ID!
+  "Used to derive relationships to Resolvers"
+  resolver: Resolver!
+  "Block number where event occurred"
+  blockNumber: Int!
+  "Unique transaction ID where event occurred"
+  transactionID: Bytes!
+  "New ENS name value"
+  name: String!
+}
+
+type AbiChanged implements ResolverEvent @entity {
+  "Concatenation of block number and log ID"
+  id: ID!
+  "Used to derive relationships to Resolvers"
+  resolver: Resolver!
+  "The block number at which the event was emitted"
+  blockNumber: Int!
+  "The transaction hash of the transaction in which the event was emitted"
+  transactionID: Bytes!
+  "The content type of the ABI change"
+  contentType: BigInt!
+}
+
+type PubkeyChanged implements ResolverEvent @entity {
+  "Concatenation of block number and log ID"
+  id: ID!
+  "Used to derive relationships to Resolvers"
+  resolver: Resolver!
+  "Block number of the Ethereum block where the event occurred"
+  blockNumber: Int!
+  "Transaction hash of the Ethereum transaction where the event occurred"
+  transactionID: Bytes!
+  "The x-coordinate of the new public key"
+  x: Bytes!
+  "The y-coordinate of the new public key"
+  y: Bytes!
+}
+
+type TextChanged implements ResolverEvent @entity {
+  "Concatenation of block number and log ID"
+  id: ID!
+  "Used to derive relationships to Resolvers"
+  resolver: Resolver!
+  "Block number of the Ethereum block in which the event occurred"
+  blockNumber: Int!
+  "Hash of the Ethereum transaction in which the event occurred"
+  transactionID: Bytes!
+  "The key of the text record that was changed"
+  key: String!
+  "The new value of the text record that was changed"
+  value: String
+}
+
+type ContenthashChanged implements ResolverEvent @entity {
+  "Concatenation of block number and log ID"
+  id: ID!
+  "Used to derive relationships to Resolvers"
+  resolver: Resolver!
+  "The block number where the event occurred"
+  blockNumber: Int!
+  "The ID of the transaction where the event occurred"
+  transactionID: Bytes!
+  "The new content hash for the domain"
+  hash: Bytes!
+}
+
+type InterfaceChanged implements ResolverEvent @entity {
+  "Concatenation of block number and log ID"
+  id: ID!
+  "Used to derive relationships to Resolvers"
+  resolver: Resolver!
+  "The block number in which the event occurred"
+  blockNumber: Int!
+  "The transaction ID for the transaction in which the event occurred"
+  transactionID: Bytes!
+  "The ID of the EIP-1820 interface that was changed"
+  interfaceID: Bytes!
+  "The address of the contract that implements the interface"
+  implementer: Bytes!
+}
+
+type AuthorisationChanged implements ResolverEvent @entity {
+  "Unique identifier for this event"
+  id: ID!
+  "The resolver associated with this event"
+  resolver: Resolver!
+  "The block number at which the event occurred"
+  blockNumber: Int!
+  "The transaction hash associated with the event"
+  transactionID: Bytes!
+  "The owner of the authorisation"
+  owner: Bytes!
+  "The target of the authorisation"
+  target: Bytes!
+  "Whether the authorisation was added or removed"
+  isAuthorized: Boolean!
+}
+
+type VersionChanged implements ResolverEvent @entity {
+  "Unique identifier for this event"
+  id: ID!
+  "The resolver associated with this event"
+  resolver: Resolver!
+  "The block number at which the event occurred"
+  blockNumber: Int!
+  "The transaction hash associated with the event"
+  transactionID: Bytes!
+  "The new version number of the resolver"
+  version: BigInt!
+}
+
+
+
+
+ENS logo
+
+0x2679—d8942b
+
+ENS
+
+v1.0.2
+85.3M Queries (Past 30D)
+
+48.8K Signal
+
+Updated a year ago
+
+Network
+mainnet
+
+Subgraph ID
+5XqPmW—P5qGtH
+
+
+Deployment ID
+QmYrEJ—VhH66Z
+
+
+Query URL
+/subgraphs/id/5XqPmW—P5qGtH
+
+
+Query
+
+
+
+Indexing
+
+0xfeff9093f6b32d0e5cddba743b06a1fedb87c004
+
+0x2f09092aacd80196fc984908c5a9a7ab3ee4f1ce
+
++11
+
+Progress
+100%
+{
+  domains(first: 5) {
+    id
+    name
+    labelName
+    labelhash
+  }
+  transfers(first: 5) {
+    id
+    domain {
+      id
+    }
+    blockNumber
+    transactionID
+  }
+}
+
+​
+{
+  "data": {
+    "domains": [
+      {
+        "id": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "labelName": null,
+        "labelhash": null,
+        "name": null
+      },
+      {
+        "id": "0x0000010b34993f6338d1c1f41bb4e949d228a7961034e3b0ea67850c68c18492",
+        "labelName": null,
+        "labelhash": "0x4d36871981a4404237e84d8d1cf7f81593b48cfcbdb81886fdd772c576964189",
+        "name": "[4d36871981a4404237e84d8d1cf7f81593b48cfcbdb81886fdd772c576964189].addr.reverse"
+      },
+      {
+        "id": "0x0000036594df1977b62c0f2b20edea7f29fd4d3fd9087743daae3c0c1e790413",
+        "labelName": "appleelqqa",
+        "labelhash": "0x908fafce9dbf04ad6a8c976cbb542e6225f7f1bff82d3b7a5399f7b8a2f0eaf6",
+        "name": "appleelqqa.eth"
+      },
+      {
+        "id": "0x0000044a32f0964f4bf8fb4d017e230ad33595c0e149b6b2d0c34b733dcf906a",
+        "labelName": "taoli",
+        "labelhash": "0xfdf6b39235c33827012ac4383dee92245873eabaabff76c35281a2819cbb055b",
+        "name": "taoli.eth"
+      },
+      {
+        "id": "0x000004ffd50c296244ac0c3ffd1ecd4569387616838c09a5425c22f8ca4389f7",
+        "labelName": "skaret",
+        "labelhash": "0x1f938880c243d2f6f7077ed684d8e353aaedcf99259e911d3df6f425d618406f",
+        "name": "skaret.eth"
+      }
+    ],
+    "transfers": [
+      {
+        "blockNumber": 10000046,
+        "domain": {
+          "id": "0x669255093eaec8ddea010a4594554df8d3fd9a352d016083ebf701ee96330957"
+        },
+        "id": "10000046-65",
+        "transactionID": "0x33126a86ae22962203652604a8c4caba327f42fc44cf212894b0871f0c50e0c3"
+      },
+      {
+        "blockNumber": 10000213,
+        "domain": {
+          "id": "0xe5e8da4e680e0e548d97774f26877988c4317550eff87f1572fe2205b8346184"
+        },
+        "id": "10000213-15",
+        "transactionID": "0x293df55919c1bb6255012ca493c95bdf363c55692b9c7d796cc857337b383a14"
+      },
+      {
+        "blockNumber": 10000257,
+        "domain": {
+          "id": "0xa8f317f0e500887684d82e9ddb3ba331fb52bedf29960567d8670f7583aaef6d"
+        },
+        "id": "10000257-117",
+
+
+
+
+
+Query quick start
+The production url for querying this Subgraph on the decentralized network.
+
+Query url format
+
+{base_url}
+
+/subgraphs/id/
+
+{subgraph_id}
+
+Api key
+See your API keys in Studio
+Base URL
+https://gateway.thegraph.com/api
+
+Subgraph id
+5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH
+
+Query URL
+
+https://gateway.thegraph.com/api/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH
+Example usage
+⁠Examples repository⁠
+
+cURL
+
+React
+
+Next.js
+
+Node.js
+
+index.tsx
+// app/page.tsx (Server Component)
+import { createClient, gql } from 'urql';
+import { cacheExchange, fetchExchange } from '@urql/core';
+import ExampleComponent from './ExampleComponent';
+const client = createClient({
+  url: 'https://gateway.thegraph.com/api/subgraphs/id/5XqPmWe6gjyrJtFn9cLy237i4cWw2j9HcUJEXsP5qGtH',
+  fetchOptions: {
+    headers: {
+      Authorization: 'Bearer {api-key}',
+    },
+  },
+  exchanges: [cacheExchange, fetchExchange],
+});
+const DATA_QUERY = gql`{
+  domains(first: 5) {
+    id
+    name
+    labelName
+    labelhash
+  }
+  transfers(first: 5) {
+    id
+    domain {
+      id
+    }
+    blockNumber
+    transactionID
+  }
+}`;
+export default async function Page() {
+  const result = await client.query(DATA_QUERY).toPromise();
+  if (result.error) {
+    return (
+      <div>
+        <p>Error: {result.error.message}</p>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <ExampleComponent data={result.data} />
+    </div>
+  );
+}
+// app/ExampleComponent.tsx (Client Component)
+import React from 'react';
+const ExampleComponent = ({ data }) => {
+  if (!data) {
+    return <p>Loading...</p>;
+  }
+  return <pre>{JSON.stringify(data, null, 2)}</pre>;
+};
+export default ExampleComponent;
+
+
+
+
+Welcome to Ethereum Identity Kit
+Ethereum Identity Kit allows you to easily implement the Ethereum identity stack into your application.
+
+Ethereum Identity Kit is a React component library. Supprt for other frameworks coming soon.
+
+Getting Started
+Install
+Install the library using your package manager.
+
+pnpm add ethereum-identity-kit wagmi viem@2.x @tanstack/react-query
+
+Setup
+Library uses Tanstack Query for data fetching, Wagmi for wallet connection and handling onchain transactions, and a Transaction provider so you need to setup a query client and provider, Wagmi provider with your Wagmi config, and add Transaction Provider to your app.
+
+import { WagmiProvider } from 'wagmi'
+import { wagmiConfig } from '#/lib/wagmi'
+import { TransactionProvider } from 'ethereum-identity-kit'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+ 
+const queryClient = new QueryClient()
+ 
+export default function App({ Component, pageProps }: AppProps) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <WagmiProvider config={wagmiConfig}>
+        <TransactionProvider>
+          <Component {...pageProps} />
+        </TransactionProvider>
+      </WagmiProvider>
+    </QueryClientProvider>
+  )
+}
+
+Apply Styles
+Add the following to your layout.tsx or _app.tsx file:
+
+import 'ethereum-identity-kit/css'
+
+If you are using dark className prop to handle dark mode, componentss will automatically adapt to the color scheme of your application.
+
+You’re all set!
+Library is typed with TypeScript, which allows for autocompletion and type safety.
+
+import { ProfileCard } from 'ethereum-identity-kit'
+ 
+export default function Home() {
+  return <ProfileCard addressOrName="vitalik.eth" />
+  // or 0x983110309620d911731ac0932219af06091b6744
+}
+
+Troubleshooting
+If you are hitting the following error trying to run your project:
+
+Error: cannot use import statement outside a module
+Next.js
+Make sure to transpile ethereum-identity-kit in your next.config.mjs:
+
+transpilePackages: ['ethereum-identity-kit'],
+
+Vite
+Make sure to transpile ethereum-identity-kit in your vite.config.ts:
+
+ssr: {
+  noExternal: ['ethereum-identity-kit'],
+},
+
+
+
+
+Full Width Profile
+The Full Width Profile component displays a comprehensive Ethereum Profile with ENS and EFP details like:
+
+Avatar and Header Image
+Name and Status
+Role (if provided)
+Description (Bio)
+Follower State (follows you, blocks you, mutes you)
+Profile Statistics (Followers, Following)
+Common Followers
+Social Media Links
+POAP Badges
+Add to your project
+import { FullWidthProfile } from 'ethereum-identity-kit'
+ 
+export default function Home() {
+  return <FullWidthProfile addressOrName="cottons.eth" />
+}
+
+Try it out! - https://playground.ethidentitykit.com/?path=/docs/organisms-full-width-profile--component-docs
+Profile Summary Card
+#53
+
+
+EFP Beta Tester
+EFP Early 2024
+cottons.eth
+cottons.eth
+
+108
+Following
+387
+Followers
+Project Owner BaeCafe
+
+baecafe.xyz
+
+Parameters
+Parameter	Description	Required	Default Value
+addressOrName	Ethereum Address or ENS name to fetch profile data for.	Yes	-
+list	Search profile data by list number; overrides addressOrName if provided.	No	-
+connectedAddress	Address of the user connected to the app.	No	-
+darkMode	Enables dark mode styling for the profile.	No	false
+showFollowerState	Shows follower state tag (follows you, blocks you, mutes you).	No	false
+showFollowButton	Shows the follow button in the profile.	No	true
+showEmptySocials	Shows empty socials in the profile.	No	true
+onStatClick	Action to perform when a stat is clicked; defaults to navigating to EFP profile with selected stat.	No	-
+selectedList	List number selected in your application for the connected user.	No	-
+onProfileClick	Action to perform when the profile is clicked.	No	-
+showPoaps	Shows EFP related POAPs on the profile.	No	true
+alignProfileContent	Aligns the profile content when max-width is surpassed (center, start, end).	No	’center’
+extraOptions	Additional options for profile data and functionality. See ProfileExtraOptions type for details:	No	-
+- customFollowButton: React node for a custom follow button.		
+- nameMenu: React node for a name menu.		
+- role: Additional information to display on the profile (used for roles on ethid.org).		
+- openListSettings: Function to open list settings modal.		
+prefetched	Prefetched data for improved performance. Object with nested structure:	No	-
+- profile: { data, isLoading, refetch } - Profile data with loading state		
+- stats: { data, isLoading, refetch } - Stats data with loading state		
+className	Additional CSS class names to apply to the component.	No	-
+style	Inline CSS styles to apply to the component.	No	-
+The component uses predefined styles and can be further customized using the className prop. The appearance can be manually toggled between light and dark modes using the darkMode prop, however, if you have a dark class applied in your application, the component will automatically use that.
+
+
+
+
+Profile Card
+The Profile Card component displays a user’s ENS and EFP details like:
+
+Primary List Number (EFP List)
+Avatar
+Header Image
+Name
+Description (Bio)
+Links
+Socials
+Followers
+Following
+Common Followers
+Add to your project
+import { ProfileCard } from 'ethereum-identity-kit'
+ 
+export default function Home() {
+  return <ProfileCard addressOrName="vitalik.eth" />
+}
+
+Try it out! - https://playground.ethidentitykit.com/?path=/docs/organisms-profile-card--component-docs
+header
+#53
+cottons.eth
+cottons.eth
+
+108
+Following
+387
+Followers
+Project Owner BaeCafe
+
+baecafe.xyz
+
+0xde6c38bb35efe400e1e4de3f6c945c3e8d81b101
+0x4c4ab134ac8b35545b1b9a589027a971dc0e9368
+0x3a46184d8ec9f401f431b37052cd984ab50ad900
+tchiktchak.eth, polikutaa.eth and 153 others you know follow them
+
+Parameters
+Parameter	Description	Required	Default Value
+addressOrName	Ethereum Address or ENS name to fetch profile data for.	Yes	-
+list	Search profile data by list number; overrides addressOrName if provided.	No	-
+connectedAddress	Address of the user connected to the app.	No	-
+darkMode	Enables dark mode styling for the profile card.	No	false
+showFollowerState	Shows follower state tag (e.g., follows you, blocks you, mutes you).	No	-
+showFollowButton	Shows the follow button in the profile card.	No	true
+showEmptySocials	Shows empty socials in the profile card.	No	true
+onStatClick	Action to perform when a stat is clicked; defaults to navigating to EFP profile with selected stat.	No	defaultOnStatClick
+hasCommonFollowersModal	Whether to show the common followers modal.	No	true
+extraOptions	Additional options for profile data and functionality. See ProfileExtraOptions type for details:	No	-
+- customFollowButton: React node for a custom follow button.		
+- nameMenu: React node for a name menu.		
+prefetched	Prefetched data for improved performance. Object with nested structure:	No	-
+- profile: { data, isLoading, refetch } - Profile data with loading state		
+- stats: { data, isLoading, refetch } - Stats data with loading state		
+className	Additional CSS class names to apply to the component.	No	-
+style	Inline CSS styles to apply to the component.	No	-
+props	Additional props for the <div> element.	No	-
+When using the prefetched prop, ensure that all required data is provided. The new nested structure provides better type safety and organization compared to the previous flat prop structure.
+
+The component uses predefined styles and can be further customized using the className prop. The appearance can be manually toggled between light and dark modes using the darkMode prop, however, if you have a dark class applied in your application, the component will automatically use that.
+
+
+
+Profile Stats
+The Profile Stats component displays follower and following statistics for a given Ethereum address or ENS name.
+
+Add to your project
+import { ProfileStats } from 'ethereum-identity-kit'
+ 
+export default function Home() {
+  return <ProfileStats addressOrName="vitalik.eth" />
+}
+
+With Prefetched Data
+import { ProfileStats, useProfileStats } from 'ethereum-identity-kit'
+ 
+export default function Home() {
+  const { stats, isLoading } = useProfileStats('vitalik.eth')
+  
+  return (
+    <ProfileStats 
+      addressOrName="vitalik.eth"
+      prefetched={{
+        stats: { data: stats, isLoading }
+      }}
+    />
+  )
+}
+
+Try it out! - https://playground.ethidentitykit.com/?path=/docs/molecules-profile-stats--component-docs
+10
+Following
+4,889
+Followers
+Parameters
+Parameter	Description	Required	Default Value
+addressOrName	Address or ENS name to lookup stats for.	Yes	-
+list	List to lookup stats for; overrides addressOrName if provided.	No	-
+containerDirection	Direction of the container layout (e.g., ‘row’, ‘column’).	No	’row’
+statsDirection	Direction of the stats layout (e.g., ‘row’, ‘column’).	No	’column’
+statsStyle	Inline styles for the stats section.	No	-
+containerStyle	Inline styles for the container.	No	-
+onStatClick	Function to be called when a stat is clicked; defaults to navigating to EFP profile with selected stat.	No	defaultOnStatClick
+prefetched	Prefetched stats data with nested structure: { stats: { data, isLoading } }	No	-
+props	Additional props for the <div> element.	No	-
+
+
+
+Profile Socials
+The Profile Socials component displays the social links of a user, including URLs and decentralized web links.
+
+Add to your project
+import { ProfileSocials } from 'ethereum-identity-kit'
+ 
+export default function Home() {
+  return <ProfileSocials userAddress="0x1234...abcd" name="vitalik.eth" records={{ url: 'example.com' }} />
+}
+
+Try it out! - https://playground.ethidentitykit.com/?path=/docs/molecules-profile-socials--component-docs
+vitalik.ca
+
+Parameters
+Parameter	Description	Required	Default Value
+userAddress	The Ethereum address of the user.	Yes	-
+name	The ENS name of the user.	No	-
+records	The records of the user, including URLs and content hashes.	Yes	-
+darkMode	Whether the profile is in dark mode.	No	false
+includeUrls	Whether to include the URLs in the profile.	No	false
+iconSize	The size of the icons displayed.	No	32
+isLoading	Whether the profile is loading, showing placeholders instead of actual data.	No	false
+showEmptySocials	Whether to show social media links even when they have no value.	No	false
+The component uses predefined styles and can be further customized using the className prop. The appearance can be manually toggled between light and dark modes using the darkMode prop, however, if you have a dark class applied in your application, the component will automatically use that.
+
+
+
+Avatar
+The Avatar component displays an avatar image for a given Ethereum address or ENS name, with support for fallback images.
+
+Add to your project
+import { Avatar } from 'ethereum-identity-kit'
+ 
+export default function Home() {
+  return <Avatar address="0x1234...abcd" name="vitalik.eth" />
+}
+
+Try it out! - https://playground.ethidentitykit.com/?path=/docs/molecules-avatar--component-docs
+vitalik.eth
+Parameters
+Parameter	Description	Required	Default Value
+address	The Ethereum address for the profile of the avatar.	Yes	-
+src	The source URL of the avatar image.	No	https://metadata.ens.domains/mainnet/avatar/{name}
+name	The ENS name of the avatar.	No	-
+fallback	The fallback image to display if the avatar image cannot be loaded.	No	https://efp.app/assets/art/default-avatar.svg
+style	Inline styles to apply to the avatar.	No	-
+props	Additional props for the <div> element containing the avatar.	No	-
+
+
+
+Notifications
+The Notifications component provides a notification bell interface that displays user notifications in a dropdown menu. It supports various positioning options and includes features like notification grouping and new notification indicators.
+
+Import
+import { Notifications } from '@efp/identity-kit'
+Usage
+<Notifications
+  addressOrName="0x123..."
+  position="top"
+  align="right"
+  darkMode={false}
+  onProfileClick={(address) => console.log(address)}
+/>
+Try it out! - https://playground.ethidentitykit.com/?path=/docs/organisms-notifications--component-docs
+42
+Props
+Prop	Type	Default	Description
+addressOrName	Address | string	Required	The Ethereum address or ENS name of the user
+position	'top' | 'bottom' | 'left' | 'right'	'top'	Position of the notifications dropdown
+align	'left' | 'center' | 'right' | 'top' | 'bottom'	'right'	Alignment of the notifications dropdown
+darkMode	boolean	false	Whether to use dark mode styling
+onProfileClick	(address: Address) => void	-	Callback function when a profile is clicked
+Features
+Displays notifications in a dropdown menu
+Groups notifications by time periods (recent, 1h, 6h, 12h, 24h, etc.)
+Shows new notification count badge
+Supports different positioning and alignment options
+Dark mode support
+Click-away to close functionality
+Example
+import { Notifications } from '@efp/identity-kit'
+ 
+function MyComponent() {
+  const handleProfileClick = (address) => {
+    // Handle profile click
+  }
+ 
+  return (
+    <Notifications
+      addressOrName="0x123..."
+      position="top"
+      align="right"
+      darkMode={true}
+      onProfileClick={handleProfileClick}
+    />
+  )
+}
+The component requires a connected wallet to function. It will not render if no wallet is connected.
+
+
+
+
+---
+description: Your Keys, Your Identifier
+---
+
+# Sign-In with Ethereum
+
+![](https://4020722360-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2Fhsp8Jza9wShYT1iNJ5iM%2Fuploads%2F8LJJvRmWFRWr45qTGItA%2FGroup%20383%20\(3\).png?alt=media\&token=d7b05a01-00a6-4474-a26c-9b6815815a4e)
+
+Sign-In with Ethereum is a new form of authentication that enables users to control their digital identity with their [Ethereum](https://ethereum.org) account and [ENS](https://ens.domains) profile instead of relying on a traditional intermediary. Already used throughout Web3, this effort standardizes the method with best practices and makes it easy to adopt securely.
+
+To hop right in, check out our [Quickstart Guide](sign-in-with-ethereum/quickstart-guide).
+
+{% content-ref url="sign-in-with-ethereum/quickstart-guide" %}
+[quickstart-guide](sign-in-with-ethereum/quickstart-guide)
+{% endcontent-ref %}
+
+### Integrate Sign-In with Ethereum
+
+{% content-ref url="libraries/typescript" %}
+[typescript](libraries/typescript)
+{% endcontent-ref %}
+
+{% content-ref url="libraries/rust" %}
+[rust](libraries/rust)
+{% endcontent-ref %}
+
+{% content-ref url="libraries/python" %}
+[python](libraries/python)
+{% endcontent-ref %}
+
+{% content-ref url="libraries/ruby" %}
+[ruby](libraries/ruby)
+{% endcontent-ref %}
+
+### Additional Support
+
+{% content-ref url="additional-support/ens-profile-resolution" %}
+[ens-profile-resolution](additional-support/ens-profile-resolution)
+{% endcontent-ref %}
+
+### Additional Resources
+
+* Sign-in With Ethereum was a standard built collaboratively with the greater Ethereum community. For more information on the EIP, check out the following page:
+
+{% content-ref url="general-information/siwe-overview/eip-4361" %}
+[eip-4361](general-information/siwe-overview/eip-4361)
+{% endcontent-ref %}
+
+* For more information on Sign-In with Ethereum and its related benefits to both the Web3 ecosystem and Web2 services, check out the following page:
+
+{% content-ref url="general-information/siwe-overview" %}
+[siwe-overview](general-information/siwe-overview)
+{% endcontent-ref %}
+
+### Community
+
+* :computer: [**Login.xyz**](https://login.xyz) - Check out the Sign-In with Ethereum home page for more information about supporters, and recent activity.
+* :space\_invader: [**Discord**](https://discord.com/invite/WjvuYqvm5Y) **-** Join the #sign-in-with-ethereum channel in the Spruce Discord Server for additional support.
+* :book: [**Blog**](https://blog.spruceid.com) **-** Check out the latest updates on Sign-In with Ethereum posted on the Spruce blog.
+
+{% hint style="info" %}
+We host a Sign-In with Ethereum community where we discuss relevant updates, new libraries, additional integrations, and more. If you're interested in contributing to Sign-In with Ethereum, we encourage that you join the calls by filling in [this form.](https://forms.gle/bJX99EJqExq66J2c7)
+{% endhint %}
+
+
+
+---
+description: >-
+  Here we learn how to connect the user's wallet with the web application and
+  sign messages.
+---
+
+# Implement the Frontend
+
+A completed version of this part can be found in the example repository ([01\_frontend](https://github.com/spruceid/siwe-quickstart/tree/main/01_frontend)). This example uses the [browser console](https://balsamiq.com/support/faqs/browserconsole/) to print messages, so it should be actively monitored.
+
+To sign in with Ethereum we only need to send **two** pieces of information:&#x20;
+
+* The **message**
+* The **signature of the message**&#x20;
+
+On the previous page, we wrote a function that gives us the means to create **messages**, so now we only need the means to **sign messages**.&#x20;
+
+So we must first connect the web application and the user's wallet so that the application can request information about the Ethereum account and sign messages.&#x20;
+
+1\. In order to do that we will need to add some new dependencies to our print project:
+
+```bash
+mkdir siwe-frontend && cd siwe-frontend/
+yarn init --yes
+mkdir src/
+yarn add siwe                   \
+         ethers                 \
+         webpack-node-externals \
+         node-polyfill-webpack-plugin
+         
+yarn add -D html-webpack-plugin \
+            webpack             \
+            webpack-cli         \
+            webpack-dev-server  \
+            bufferutil          \
+            utf-8-validate
+```
+
+2\. Create a new file `webpack.config.js` and add the following:
+
+```javascript
+const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const NodePolyfillPlugin = require("node-polyfill-webpack-plugin")
+
+module.exports = {
+  mode: 'development',
+  entry: './src/index.js',
+  resolve: {
+    fallback: {
+      net: false,
+      tls: false,
+      fs: false,
+    }
+  },
+  output: {
+    filename: 'main.js',
+    path: path.resolve(__dirname, 'dist')
+  },
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: './src/index.html',
+      filename: 'index.html'
+    }),
+    new NodePolyfillPlugin(),
+  ]
+};
+
+```
+
+3\. Make sure that `package.json` has the `scripts` section and match it to the following:
+
+```json
+{
+  "name": "siwe-frontend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "webpack serve"
+  },
+  "dependencies": {
+    "siwe": "^2.1.4",
+    "ethers": "^6.3.0",
+    "node-polyfill-webpack-plugin": "^2.0.1",
+    "webpack-node-externals": "^3.0.0"
+  },
+  "devDependencies": {
+    "bufferutil": "^4.0.7",
+    "html-webpack-plugin": "^5.5.1",
+    "utf-8-validate": "^6.0.3",
+    "webpack": "^5.80.0",
+    "webpack-cli": "^5.0.1",
+    "webpack-dev-server": "^4.13.3"
+  }
+}
+
+```
+
+4\. Populate `src/index.js` with the following:
+
+{% code title="src/index.js" %}
+```javascript
+import { BrowserProvider } from 'ethers';
+import { SiweMessage } from 'siwe';
+
+const domain = window.location.host;
+const origin = window.location.origin;
+const provider = new BrowserProvider(window.ethereum);
+
+function createSiweMessage (address, statement) {
+  const message = new SiweMessage({
+    domain,
+    address,
+    statement,
+    uri: origin,
+    version: '1',
+    chainId: '1'
+  });
+  return message.prepareMessage();
+}
+
+function connectWallet () {
+  provider.send('eth_requestAccounts', [])
+    .catch(() => console.log('user rejected request'));
+}
+
+async function signInWithEthereum () {
+  const signer = await provider.getSigner();
+  const message = createSiweMessage(
+      signer.address, 
+      'Sign in with Ethereum to the app.'
+    );
+  console.log(await signer.signMessage(message));
+}
+
+// Buttons from the HTML page
+const connectWalletBtn = document.getElementById('connectWalletBtn');
+const siweBtn = document.getElementById('siweBtn');
+connectWalletBtn.onclick = connectWallet;
+siweBtn.onclick = signInWithEthereum;
+
+```
+{% endcode %}
+
+5\. Populate `src/index.html` with the following:
+
+{% code title="src/index.html" %}
+```markup
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>SIWE Quickstart</title>
+</head>
+
+<body>
+  <div><button id='connectWalletBtn'>Connect wallet</button></div>
+  <div><button id='siweBtn'>Sign-in with Ethereum</button></div>
+</body>
+</html>
+```
+{% endcode %}
+
+6\. Now run the following command and visit the URL printed to the console. After you connect your wallet and sign the message, the signature should appear in the console.
+
+```
+yarn start
+```
+
+#### Explanation of Components
+
+* [ethers.js](https://docs.ethers.io/v5/) is a library that provides functionality for interacting with the Ethereum blockchain. We  use it here for connecting the webpage to extension wallets.
+* The Metamask extension injects the `window.ethereum` object into every webpage, and the `ethers` library provides a convenient provider class to wrap it. We then use this provider to connect to the wallet, and access signing capabilities:
+
+```javascript
+const provider = new BrowserProvider(window.ethereum);
+const signer = await provider.getSigner();
+```
+
+* Running the `connectWallet` function below will send a request to the MetaMask extension to ask permission to view information about the Ethereum accounts that it controls. MetaMask will then show a window to the user asking them to authorize our application to do so. If they authorize the request then we've connected their account:
+
+```javascript
+function connectWallet () {
+  provider.send('eth_requestAccounts', [])
+    .catch(() => console.log('user rejected request'));
+}
+```
+
+* We can also now start signing requests with the following:
+
+```javascript
+await signer.signMessage(message);
+```
+
+{% hint style="info" %}
+To disconnect an account, the user **must do so from the MetaMask extension** in this example.
+{% endhint %}
+
+
+
+---
+description: >-
+  Here we learn how to update the frontend to send the signed messages to the
+  server.
+---
+
+# Connect the Frontend
+
+A completed version of the updated frontend can be found here ([`03_complete_app/frontend`](https://github.com/spruceid/siwe-quickstart/tree/main/03_complete_app/frontend)). This example uses the [browser console](https://balsamiq.com/support/faqs/browserconsole/) to print messages, so it should be actively monitored.
+
+1\. Revisit the `siwe-frontend` directory, stop any running servers, and update `src/index.js:`
+
+{% code title="src/index.js" %}
+```javascript
+import { BrowserProvider } from 'ethers';
+import { SiweMessage } from 'siwe';
+
+const domain = window.location.host;
+const origin = window.location.origin;
+const provider = new BrowserProvider(window.ethereum);
+
+const BACKEND_ADDR = "http://localhost:3000";
+
+async function createSiweMessage(address, statement) {
+    const res = await fetch(`${BACKEND_ADDR}/nonce`);
+    const message = new SiweMessage({
+        domain,
+        address,
+        statement,
+        uri: origin,
+        version: '1',
+        chainId: '1',
+        nonce: await res.text()
+    });
+    return message.prepareMessage();
+}
+
+function connectWallet() {
+    provider.send('eth_requestAccounts', [])
+        .catch(() => console.log('user rejected request'));
+}
+
+let message = null;
+let signature = null;
+
+async function signInWithEthereum() {
+    const signer = await provider.getSigner();
+
+    message = await createSiweMessage(
+        await signer.address,
+        'Sign in with Ethereum to the app.'
+    );
+    console.log(message);
+    signature = await signer.signMessage(message);
+    console.log(signature);
+}
+
+async function sendForVerification() {
+    const res = await fetch(`${BACKEND_ADDR}/verify`, {
+        method: "POST",
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message, signature }),
+    });
+    console.log(await res.text());
+}
+
+const connectWalletBtn = document.getElementById('connectWalletBtn');
+const siweBtn = document.getElementById('siweBtn');
+const verifyBtn = document.getElementById('verifyBtn');
+connectWalletBtn.onclick = connectWallet;
+siweBtn.onclick = signInWithEthereum;
+verifyBtn.onclick = sendForVerification;
+
+```
+{% endcode %}
+
+2\. Update `src/index.html`:
+
+{% code title="src/index.html" %}
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>SIWE Quickstart</title>
+</head>
+
+<body>
+  <div><button id='connectWalletBtn'>Connect wallet</button></div>
+  <div><button id='siweBtn'>Sign-in with Ethereum</button></div>
+  <div><button id='verifyBtn'>Send for verification</button></div>
+</body>
+</html>
+```
+{% endcode %}
+
+3\. For this last step, you need to have both the frontend and backend running together. Start by running the backend server with the following command from the parent directory:
+
+```
+cd siwe-backend
+yarn start
+```
+
+In a separate terminal, start the frontend by running the following command and visit the URL printed to the console:&#x20;
+
+```
+cd siwe-frontend
+yarn start
+```
+
+4\. Try to Sign-In with Ethereum by visiting the URL printed to the console, connecting your wallet, and signing in. You can now hit the `Send for verification` button to receive a `true` in the console.
+
+
+
+
+---
+description: >-
+  Here we learn how to implement sessions with Express.js to add the necessary
+  backend security.
+---
+
+# Implement Sessions
+
+A completed version of the updated backend can be found here ([`03_complete_app/backend`](https://github.com/spruceid/siwe-quickstart/tree/main/03_complete_app/backend)). This example uses the [browser console](https://balsamiq.com/support/faqs/browserconsole/) to print messages, so it should be actively monitored.
+
+For additional security against replay attacks, it is not enough for the backend to generate the nonce. It must also be tied to a browser session with the end-user. In the `siwe-backend` directory, install the following and edit `index.js`:
+
+```
+yarn add express-session
+```
+
+Update `src/index.js` to the following:
+
+{% code title="src/index.js" %}
+```javascript
+import cors from 'cors';
+import express from 'express';
+import Session from 'express-session';
+import { generateNonce, SiweMessage } from 'siwe';
+
+const app = express();
+app.use(express.json());
+app.use(cors({
+    origin: 'http://localhost:8080',
+    credentials: true,
+}))
+
+app.use(Session({
+    name: 'siwe-quickstart',
+    secret: "siwe-quickstart-secret",
+    resave: true,
+    saveUninitialized: true,
+    cookie: { secure: false, sameSite: true }
+}));
+
+app.get('/nonce', async function (req, res) {
+    req.session.nonce = generateNonce();
+    res.setHeader('Content-Type', 'text/plain');
+    res.status(200).send(req.session.nonce);
+});
+
+app.post('/verify', async function (req, res) {
+    try {
+        if (!req.body.message) {
+            res.status(422).json({ message: 'Expected prepareMessage object as body.' });
+            return;
+        }
+
+        let SIWEObject = new SiweMessage(req.body.message);
+        const { data: message } = await SIWEObject.verify({ signature: req.body.signature, nonce: req.session.nonce });
+
+        req.session.siwe = message;
+        req.session.cookie.expires = new Date(message.expirationTime);
+        req.session.save(() => res.status(200).send(true));
+    } catch (e) {
+        req.session.siwe = null;
+        req.session.nonce = null;
+        console.error(e);
+        switch (e) {
+            case ErrorTypes.EXPIRED_MESSAGE: {
+                req.session.save(() => res.status(440).json({ message: e.message }));
+                break;
+            }
+            case ErrorTypes.INVALID_SIGNATURE: {
+                req.session.save(() => res.status(422).json({ message: e.message }));
+                break;
+            }
+            default: {
+                req.session.save(() => res.status(500).json({ message: e.message }));
+                break;
+            }
+        }
+    }
+});
+
+app.get('/personal_information', function (req, res) {
+    if (!req.session.siwe) {
+        res.status(401).json({ message: 'You have to first sign_in' });
+        return;
+    }
+    console.log("User is authenticated!");
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(`You are authenticated and your address is: ${req.session.siwe.address}`);
+});
+
+app.listen(3000);
+
+```
+{% endcode %}
+
+This way, the session (`req.session`) stores the nonce for the initial validation of the message, and once that's done, more can be added. For example, here we store the message's fields, so we can always reference the address of the user.
+
+A potential extension is to resolve the ENS domain of the user and keep it in the session.
+
+{% hint style="info" %}
+Refer to [http://expressjs.com/en/resources/middleware/session.html](http://expressjs.com/en/resources/middleware/session.html) for additional information on how to use `express-session` in production.
+{% endhint %}
+
+On the client side, the flow is similar to the previous example, except we now need to send cookies with our requests for the session to work. We can add a new endpoint, `personal_information`, to retrieve the information from the session in place, without having to send the message and signature every time.
+
+In the `siwe-frontend` directory, stop any running instances and populate `src/index.js` to match the following:
+
+{% code title="src/index.js" %}
+```javascript
+import { BrowserProvider } from 'ethers';
+import { SiweMessage } from 'siwe';
+
+const domain = window.location.host;
+const origin = window.location.origin;
+const provider = new BrowserProvider(window.ethereum);
+
+const BACKEND_ADDR = "http://localhost:3000";
+async function createSiweMessage(address, statement) {
+    const res = await fetch(`${BACKEND_ADDR}/nonce`, {
+        credentials: 'include',
+    });
+    const message = new SiweMessage({
+        domain,
+        address,
+        statement,
+        uri: origin,
+        version: '1',
+        chainId: '1',
+        nonce: await res.text()
+    });
+    return message.prepareMessage();
+}
+
+function connectWallet() {
+    provider.send('eth_requestAccounts', [])
+        .catch(() => console.log('user rejected request'));
+}
+
+async function signInWithEthereum() {
+    const signer = await provider.getSigner();
+
+    const message = await createSiweMessage(
+        await signer.getAddress(),
+        'Sign in with Ethereum to the app.'
+    );
+    const signature = await signer.signMessage(message);
+
+    const res = await fetch(`${BACKEND_ADDR}/verify`, {
+        method: "POST",
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message, signature }),
+        credentials: 'include'
+    });
+    console.log(await res.text());
+}
+
+async function getInformation() {
+    const res = await fetch(`${BACKEND_ADDR}/personal_information`, {
+        credentials: 'include',
+    });
+    console.log(await res.text());
+}
+
+const connectWalletBtn = document.getElementById('connectWalletBtn');
+const siweBtn = document.getElementById('siweBtn');
+const infoBtn = document.getElementById('infoBtn');
+connectWalletBtn.onclick = connectWallet;
+siweBtn.onclick = signInWithEthereum;
+infoBtn.onclick = getInformation;
+
+```
+{% endcode %}
+
+Update the `siwe-frontend/src/index.html` to match the following:
+
+{% code title="src/index.html" %}
+```markup
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>SIWE Quickstart</title>
+  </head>
+
+  <body>
+    <div><button id="connectWalletBtn">Connect wallet</button></div>
+    <div><button id="siweBtn">Sign-in with Ethereum</button></div>
+    <div><button id="infoBtn">Get session information</button></div>
+  </body>
+</html>
+```
+{% endcode %}
+
+3\. For this last step, you need to have both the frontend and backend running together. Start by running the backend server with the following command from the parent directory:
+
+```
+cd siwe-backend
+yarn start
+```
+
+In a separate terminal, start the frontend by running the following command and visit the URL printed to the console:&#x20;
+
+```
+cd siwe-frontend
+yarn start
+```
+
+4\. Try to Sign-In with Ethereum by visiting the URL printed to the console, connecting your wallet, and signing in. You can now hit the `Get session information` button to receive a message similar to the following in the console:
+
+```
+You are authenticated and your address is: 
+0x6Ee9894c677EFa1c56392e5E7533DE76004C8D94
+```
+
+
+
+---
+description: Here we learn how to resolve a user's ENS profile data.
+---
+
+# Resolve ENS Profiles
+
+A completed version of the updated frontend can be found here: ([`04_ens_resolution/frontend`](https://github.com/spruceid/siwe-quickstart/tree/main/04_ens_resolution/frontend)).
+
+Now that the application knows the user's connected account, a basic profile can be built using additional information from [ENS](https://ens.domains) if available. Because the `frontend` is already is using `ethers`, it is simple to add this functionality and retrieve this data.&#x20;
+
+Update the `frontend/src/index.html` file to the following:
+
+{% code title="src/index.html" %}
+```html
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>SIWE Quickstart</title>
+  <style>
+    .hidden {
+      display: none
+    }
+
+    table, th, td {
+      border: 1px black solid;
+    }
+
+    .avatar {
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      width: 20px;
+      height: 20px;
+    }
+  </style>
+</head>
+
+<body>
+  <div><button id="connectWalletBtn">Connect wallet</button></div>
+  <div><button id="siweBtn">Sign-in with Ethereum</button></div>
+  <div><button id="infoBtn">Get session information</button></div>
+  <div class="hidden" id="welcome">
+  </div>
+  <div class="hidden" id="profile">
+    <h3>ENS Metadata:</h3>
+    <div id="ensLoader"></div>
+    <div id="ensContainer" class="hidden">
+      <table id="ensTable">
+      </table>
+    </div> 
+  </div>
+  <div class="hidden" id="noProfile">
+    No ENS Profile detected.
+  </div>
+</body>
+
+</html>
+```
+{% endcode %}
+
+This will create a table with data based on the user's ENS information if it exists. Otherwise, if there isn't any data, it will remain hidden and a "No ENS Profile detected." message will be displayed. &#x20;
+
+Finally, we can finish by updating the `index.js` file to include what's needed.&#x20;
+
+Update the `frontend/src/index.js` file to the following:
+
+{% code title="src/index.js" %}
+```javascript
+import { BrowserProvider } from 'ethers';
+import { SiweMessage } from 'siwe';
+
+const domain = window.location.host;
+const origin = window.location.origin;
+const provider = new BrowserProvider(window.ethereum);
+
+const profileElm = document.getElementById('profile');
+const noProfileElm = document.getElementById('noProfile');
+const welcomeElm = document.getElementById('welcome');
+
+const ensLoaderElm = document.getElementById('ensLoader');
+const ensContainerElm = document.getElementById('ensContainer');
+const ensTableElm = document.getElementById('ensTable');
+
+let address;
+
+const BACKEND_ADDR = "http://localhost:3000";
+async function createSiweMessage(address, statement) {
+    const res = await fetch(`${BACKEND_ADDR}/nonce`, {
+        credentials: 'include',
+    });
+    const message = new SiweMessage({
+        domain,
+        address,
+        statement,
+        uri: origin,
+        version: '1',
+        chainId: '1',
+        nonce: await res.text()
+    });
+    return message.prepareMessage();
+}
+
+function connectWallet() {
+    provider.send('eth_requestAccounts', [])
+        .catch(() => console.log('user rejected request'));
+}
+
+async function signInWithEthereum() {
+    const signer = await provider.getSigner();
+    profileElm.classList = 'hidden';
+    noProfileElm.classList = 'hidden';
+    welcomeElm.classList = 'hidden';
+
+    address = await signer.getAddress()
+    const message = await createSiweMessage(
+        address,
+        'Sign in with Ethereum to the app.'
+    );
+    const signature = await signer.signMessage(message);
+
+    const res = await fetch(`${BACKEND_ADDR}/verify`, {
+        method: "POST",
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message, signature }),
+        credentials: 'include'
+    });
+
+    if (!res.ok) {
+        console.error(`Failed in getInformation: ${res.statusText}`);
+        return 
+    }
+    console.log(await res.text());
+
+    displayENSProfile();
+}
+
+async function getInformation() {
+    const res = await fetch(`${BACKEND_ADDR}/personal_information`, {
+        credentials: 'include',
+    });
+
+    if (!res.ok) {
+        console.error(`Failed in getInformation: ${res.statusText}`);
+        return 
+    }
+
+    let result = await res.text();
+    console.log(result);
+    address = result.split(" ")[result.split(" ").length - 1];
+    displayENSProfile();
+}
+
+async function displayENSProfile() {
+    const ensName = await provider.lookupAddress(address);
+
+    if (ensName) {
+        profileElm.classList = '';
+
+        welcomeElm.innerHTML = `Hello, ${ensName}`;
+        let avatar = await provider.getAvatar(ensName);
+        if (avatar) {
+            welcomeElm.innerHTML += ` <img class="avatar" src=${avatar}/>`;
+        }
+
+        ensLoaderElm.innerHTML = 'Loading...';
+        ensTableElm.innerHTML.concat(`<tr><th>ENS Text Key</th><th>Value</th></tr>`);
+        const resolver = await provider.getResolver(ensName);
+
+        const keys = ["email", "url", "description", "com.twitter"];
+        ensTableElm.innerHTML += `<tr><td>name:</td><td>${ensName}</td></tr>`;
+        for (const key of keys)
+            ensTableElm.innerHTML += `<tr><td>${key}:</td><td>${await resolver.getText(key)}</td></tr>`;
+        ensLoaderElm.innerHTML = '';
+        ensContainerElm.classList = '';
+    } else {
+        welcomeElm.innerHTML = `Hello, ${address}`;
+        noProfileElm.classList = '';
+    }
+
+    welcomeElm.classList = '';
+}
+
+const connectWalletBtn = document.getElementById('connectWalletBtn');
+const siweBtn = document.getElementById('siweBtn');
+const infoBtn = document.getElementById('infoBtn');
+connectWalletBtn.onclick = connectWallet;
+siweBtn.onclick = signInWithEthereum;
+infoBtn.onclick = getInformation;
+
+```
+{% endcode %}
+
+The above adds a look-up for some ENS metadata (`email`, `url`, `description` and `twitter`), then converts the result into content that is displayed in the table. Other functionality includes the showing and hiding of UI elements to make the page dynamic.
+
+By doing this we're grabbing the label to each of the text records for a user's ENS profile, resolving each of them, and placing the result into a basic table.
+
+To see the result, go into `frontend` and run:
+
+```bash
+yarn
+yarn start
+```
+
+Then go into `backend` and run:
+
+```bash
+yarn
+yarn start
+```
+
+And run through the updated example!&#x20;
+
+Now once the Sign-In with Ethereum flow is complete and there's an ENS profile associated with the account, the ENS name and avatar will appear along with all additional metadata from the profile in a new table.
+
+
+
+
+---
+description: Here we learn how to pull information on a users' NFT holdings
+---
+
+# Resolve NFT Holdings
+
+A completed version of the updated frontend can be found here: ([`05_nft_resolution/frontend`](https://github.com/spruceid/siwe-quickstart/tree/main/05_nft_resolution/frontend)).
+
+Similar to the ENS look-up, we can also query the user's NFT ownership. In this example, we will display basic information about the user's NFTs in a table, via the [OpenSea API](https://docs.opensea.io/reference/api-overview). However, this could also be extended to even give the user a visual gallery view of their NFTs once connected. \
+\
+First, we need to change `index.html` to include a new table. We'll use the same structure as in the last chapter, separating the two tables with an `<hr>` tag:
+
+{% code title="src/index.html" %}
+```html
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>SIWE Quickstart</title>
+  <style>
+    .hidden {
+      display: none
+    }
+
+    table,
+    th,
+    td {
+      border: 1px black solid;
+    }
+
+    .avatar {
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      width: 20px;
+      height: 20px;
+    }
+  </style>
+</head>
+
+<body>
+  <div><button id="connectWalletBtn">Connect wallet</button></div>
+  <div><button id="siweBtn">Sign-in with Ethereum</button></div>
+  <div><button id="infoBtn">Get session information</button></div>
+  <div class="hidden" id="welcome">
+  </div>
+  <div class="hidden" id="profile">
+    <h3>ENS Metadata:</h3>
+    <div id="ensLoader"></div>
+    <div id="ensContainer" class="hidden">
+      <table id="ensTable">
+      </table>
+    </div>
+  </div>
+  <div class="hidden" id="noProfile">
+    No ENS Profile Found.
+  </div>
+  <div class="hidden" id="nft">
+    <h3>NFT Ownership</h3>
+    <div id="nftLoader"></div>
+    <div id="nftContainer" class="hidden">
+      <table id="nftTable">
+      </table>
+    </div>
+  </div>
+</body>
+
+</html>
+```
+{% endcode %}
+
+Next, we'll update the `index.js` file to reach out to OpenSea's API using the logged-in user's address, then format the output to place the information in the table. If the user has no NFTs, we'll display a "No NFTs found" message in the loader `div`.
+
+{% hint style="info" %}
+OpenSea's API is a great resource for interacting with NFT data off-chain. Learn more [here](https://docs.opensea.io/reference/api-overview).
+{% endhint %}
+
+{% code title="src/index.js" %}
+```javascript
+import { BrowserProvider } from 'ethers';
+import { SiweMessage } from 'siwe';
+
+const domain = window.location.host;
+const origin = window.location.origin;
+const provider = new BrowserProvider(window.ethereum);
+
+const profileElm = document.getElementById('profile');
+const noProfileElm = document.getElementById('noProfile');
+const welcomeElm = document.getElementById('welcome');
+
+const ensLoaderElm = document.getElementById('ensLoader');
+const ensContainerElm = document.getElementById('ensContainer');
+const ensTableElm = document.getElementById('ensTable');
+
+const nftElm = document.getElementById('nft');
+const nftLoaderElm = document.getElementById('nftLoader');
+const nftContainerElm = document.getElementById('nftContainer');
+const nftTableElm = document.getElementById('nftTable');
+
+let address;
+
+const BACKEND_ADDR = "http://localhost:3000";
+async function createSiweMessage(address, statement) {
+    const res = await fetch(`${BACKEND_ADDR}/nonce`, {
+        credentials: 'include',
+    });
+    const message = new SiweMessage({
+        domain,
+        address,
+        statement,
+        uri: origin,
+        version: '1',
+        chainId: '1',
+        nonce: await res.text()
+    });
+    return message.prepareMessage();
+}
+
+function connectWallet() {
+    provider.send('eth_requestAccounts', [])
+        .catch(() => console.log('user rejected request'));
+}
+
+async function displayENSProfile() {
+    const ensName = await provider.lookupAddress(address);
+
+    if (ensName) {
+        profileElm.classList = '';
+
+        welcomeElm.innerHTML = `Hello, ${ensName}`;
+        let avatar = await provider.getAvatar(ensName);
+        if (avatar) {
+            welcomeElm.innerHTML += ` <img class="avatar" src=${avatar}/>`;
+        }
+
+        ensLoaderElm.innerHTML = 'Loading...';
+        ensTableElm.innerHTML.concat(`<tr><th>ENS Text Key</th><th>Value</th></tr>`);
+        const resolver = await provider.getResolver(ensName);
+
+        const keys = ["email", "url", "description", "com.twitter"];
+        ensTableElm.innerHTML += `<tr><td>name:</td><td>${ensName}</td></tr>`;
+        for (const key of keys)
+            ensTableElm.innerHTML += `<tr><td>${key}:</td><td>${await resolver.getText(key)}</td></tr>`;
+        ensLoaderElm.innerHTML = '';
+        ensContainerElm.classList = '';
+    } else {
+        welcomeElm.innerHTML = `Hello, ${address}`;
+        noProfileElm.classList = '';
+    }
+
+    welcomeElm.classList = '';
+}
+
+async function getNFTs() {
+    try {
+        let res = await fetch(`https://api.opensea.io/api/v1/assets?owner=${address}`);
+        if (!res.ok) {
+            throw new Error(res.statusText)
+        }
+
+        let body = await res.json();
+
+        if (!body.assets || !Array.isArray(body.assets) || body.assets.length === 0) {
+            return []
+        }
+
+        return body.assets.map((asset) => {
+            let {name, asset_contract, token_id} = asset;
+            let {address} = asset_contract;
+            return {name, address, token_id};
+        });
+    } catch (err) {
+        console.error(`Failed to resolve nfts: ${err.message}`);
+        return [];
+    }
+}
+
+async function displayNFTs() {
+    nftLoaderElm.innerHTML = 'Loading NFT Ownership...';
+    nftElm.classList = '';
+
+    let nfts = await getNFTs();
+    if (nfts.length === 0) {
+        nftLoaderElm.innerHTML = 'No NFTs found';
+        return;
+    }
+
+    let tableHtml = "<tr><th>Name</th><th>Address</th><th>Token ID</th></tr>";
+    nfts.forEach((nft) => {
+        tableHtml += `<tr><td>${nft.name}</td><td>${nft.address}</td><td>${nft.token_id}</td></tr>`
+    });
+
+    nftTableElm.innerHTML = tableHtml;
+    nftContainerElm.classList = '';
+    nftLoaderElm.innerHTML = '';
+}
+
+async function signInWithEthereum() {
+    const signer = await provider.getSigner();
+    profileElm.classList = 'hidden';
+    noProfileElm.classList = 'hidden';
+    welcomeElm.classList = 'hidden';
+
+    address = await signer.getAddress()
+    const message = await createSiweMessage(
+        address,
+        'Sign in with Ethereum to the app.'
+    );
+    const signature = await signer.signMessage(message);
+
+    const res = await fetch(`${BACKEND_ADDR}/verify`, {
+        method: "POST",
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message, signature }),
+        credentials: 'include'
+    });
+
+    if (!res.ok) {
+        console.error(`Failed in getInformation: ${res.statusText}`);
+        return 
+    }
+    console.log(await res.text());
+
+    displayENSProfile();
+    displayNFTs();
+}
+
+async function getInformation() {
+    const res = await fetch(`${BACKEND_ADDR}/personal_information`, {
+        credentials: 'include',
+    });
+
+    if (!res.ok) {
+        console.error(`Failed in getInformation: ${res.statusText}`);
+        return 
+    }
+
+    let result = await res.text();
+    console.log(result);
+    address = result.split(" ")[result.split(" ").length - 1];
+    displayENSProfile();
+    displayNFTs();
+}
+
+const connectWalletBtn = document.getElementById('connectWalletBtn');
+const siweBtn = document.getElementById('siweBtn');
+const infoBtn = document.getElementById('infoBtn');
+connectWalletBtn.onclick = connectWallet;
+siweBtn.onclick = signInWithEthereum;
+infoBtn.onclick = getInformation;
+
+```
+{% endcode %}
+
+Similar to the previous guide, to see the result, go into `frontend` and run:
+
+```bash
+yarn
+yarn start
+```
+
+Then go into `backend` and run:
+
+```bash
+yarn
+yarn start
+```
+
+Now, when a user signs in, information on NFT holdings is displayed below the ENS information (if available).
+
+
+
+
+---
+description: TypeScript v2
+---
+
+# Migrating to v2
+
+{% embed url="https://github.com/spruceid/siwe/releases/tag/v2.0.3-beta" %}
+
+If you are using `siwe v1.1.6`, we encourage you to update to the latest version (`2.1.x`). The following guide walks you through how to update your application.&#x20;
+
+## Differences Present in v2.0
+
+The function `validate(sig, provider)` is now deprecated and is replaced by `verify(VerifyParams, VerifyOpts)`. These two new parameters accept the following fields:
+
+```typescript
+export interface VerifyParams {
+  /** Signature of the message signed by the wallet */
+  signature: string;
+
+  /** RFC 4501 dns authority that is requesting the signing. */
+  domain?: string;
+
+  /** Randomized token used to prevent replay attacks, at least 8 alphanumeric characters. */
+  nonce?: string;
+
+  /**ISO 8601 datetime string of the current time. */
+  time?: string;
+}
+```
+
+```typescript
+export interface VerifyOpts {
+  /** ethers provider to be used for EIP-1271 validation */
+  provider?: providers.Provider;
+
+  /** If the library should reject promises on errors, defaults to false */
+  suppressExceptions?: boolean;
+}
+```
+
+The new function makes it easier to match fields automatically - like `domain`, `nonce` and match against other TimeDate instead of now (`time`).
+
+The return type was also modified. It now returns a `SiweResponse` instead of a `SiweMessage`, and this new object is defined by the following interface:
+
+```typescript
+export interface SiweResponse {
+  /** Boolean representing if the message was verified with success. */
+  success: boolean;
+
+  /** If present `success` MUST be false and will provide extra information on the failure reason. */
+  error?: SiweError;
+
+  /** Original message that was verified. */
+  data: SiweMessage;
+}
+```
+
+As part of the new API, new error types were introduced to clarify when a message fails verification. These errors are defined at:
+
+{% embed url="https://github.com/spruceid/siwe/blob/main/packages/siwe/lib/types.ts#L68" %}
+SIWE type definitions
+{% endembed %}
+
+More information regarding the rationale behind the API Harmonization and TypeScript v2.0 beta release can be found here:
+
+{% embed url="https://blog.spruceid.com/sign-in-with-ethereum-typescript-v2-0-release/" %}
+
+
+
+
+---
+description: A Quickstart example using the TypeScript SIWE Library
+---
+
+# TypeScript Quickstart
+
+## Quickstart
+
+{% hint style="success" %}
+:zap: **Goals**
+
+* Run a Sign-In with Etheruem example locally
+* Sign-In with Ethereum using a preferred wallet
+{% endhint %}
+
+{% hint style="info" %}
+:zap: **Requirements**
+
+* [NodeJS](https://nodejs.org/en/) version 14.0 or higher
+{% endhint %}
+
+### Running the Quickstart&#x20;
+
+* First clone the `siwe` repository from GitHub by running the following command:
+
+```
+git clone https://github.com/spruceid/siwe-notepad
+```
+
+* Next, enter the directory and run the example by using the following commands:&#x20;
+
+```
+cd siwe-notepad
+npm install
+npm run dev
+```
+
+* Finally, visit the example at http://localhost:4361 (or whichever port npm allocated).
+
+![Use your web browser](https://4020722360-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2Fhsp8Jza9wShYT1iNJ5iM%2Fuploads%2FH4aNEiLqfiVnl5VSaCel%2FScreen%20Shot%202022-01-12%20at%2011.53.06%20PM.png?alt=media\&token=410177d3-3c0a-4f21-a6cc-35a25d4c00ec)
+
+* Once the example has loaded, sign in with Ethereum by clicking on one of the wallet options, enter some text, and save that text. After disconnecting, try reconnecting to reload that text once the session has been reestablished.
+
+![](https://4020722360-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2Fhsp8Jza9wShYT1iNJ5iM%2Fuploads%2Fe0IdZnHl1Vt07J6hhfPP%2FScreen%20Shot%202022-01-12%20at%2011.55.01%20PM.png?alt=media\&token=eb9f0943-bd16-4e88-a35c-a8490a84a308)
+
+The full example can be found here:
+
+{% embed url="https://github.com/spruceid/siwe-notepad" %}
+
+
+
+
+---
+description: Sign-In with Ethereum - For Web2 and Web3
+---
+
+# SIWE Overview
+
+## Sign-In with Ethereum
+
+Today’s login experiences rely on accounts controlled by centralized identity providers, for-profit behemoths like Google, Facebook, and Apple. Identity providers often have sole discretion over the existence and use of users’ digital identities across the web, fundamentally at odds with the best interest of users.
+
+The Ethereum Foundation and Ethereum Name Service (ENS) put forward a [Request for Proposal](https://notes.ethereum.org/@djrtwo/sign-in-with-ethereum-RFP) for Sign-in with Ethereum in 2021, which would enable users to use their Ethereum accounts to access web services instead of accounts owned by large corporations.&#x20;
+
+The Ethereum ecosystem already has tens of millions of monthly active wallet users signing with their cryptographic keys for financial transactions, community governance, and more.&#x20;
+
+The security of these wallets has been proven across billions of dollars of digital assets at stake--not theoretical security, but real tests in production. These secure wallets can also be used to sign in to Web2 services.
+
+### Benefits to Web2 and Web3
+
+Sign-In with Ethereum describes how Ethereum accounts authenticate with off-chain services by signing a standard message format parameterized by scope, session details, and security mechanisms (e.g., a nonce).&#x20;
+
+Already, many services support workflows to authenticate Ethereum accounts using message signing, such as establishing a cookie-based web session which can manage privileged metadata about the authenticating address.&#x20;
+
+_**For Web2**, this is an opportunity to give users control over their identifiers and slowly introduce their dedicated user bases to Web3. By providing a strict specification that can be followed along with any necessary tooling to ease any integration concerns, Sign-In with Ethereum has a chance at truly transforming the way in which individuals interact with apps and services._
+
+_**For Web3**, this is an opportunity to standardize the sign-in workflow and improve interoperability across existing services, while also providing wallet vendors a reliable method to identify signing requests as Sign-In with Ethereum requests for improved UX._
+
+
+
+---
+description: >-
+  Here we learn how to build the backend server to handle the user's submission
+  using Express.js.
+---
+
+# Implement the Backend
+
+A completed version of this part can be found here ([02\_backend](https://github.com/spruceid/siwe-quickstart/tree/main/02_backend)). This example uses only uses the command line in the terminal to print messages, no monitoring of the browser console log is necessary.
+
+The backend server gives the frontend a nonce to include in the SIWE message and also verifies the submission. As such, this basic example only provides two corresponding endpoints:
+
+* `/nonce` to generate the nonce for the interaction via `GET` request.
+* `/verify` to verify the submitted SIWE message and signature via `POST` request.
+
+While **this simple example does not check the nonce during verification, all production implementations should**, as demonstrated in the final section [Using Sessions](implement-sessions).&#x20;
+
+1\. Setup the project directory:
+
+```bash
+mkdir siwe-backend && cd siwe-backend/
+yarn init --yes
+mkdir src/
+yarn add cors express siwe ethers
+```
+
+2\. Make sure that the `package.json` `type` is `module` like the following:
+
+```json
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "siwe": "^2.1.4",
+    "cors": "^2.8.5",
+    "ethers": "^6.3.0",
+    "express": "^4.18.2"
+  }
+}
+```
+
+3\. Populate `src/index.js` with the following:
+
+{% code title="src/index.js" %}
+```javascript
+import cors from 'cors';
+import express from 'express';
+import { generateNonce, SiweMessage } from 'siwe';
+
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+app.get('/nonce', function (_, res) {
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(generateNonce());
+});
+
+app.post('/verify', async function (req, res) {
+    const { message, signature } = req.body;
+    const siweMessage = new SiweMessage(message);
+    try {
+        await siweMessage.verify({ signature });
+        res.send(true);
+    } catch {
+        res.send(false);
+    }
+});
+
+app.listen(3000);
+```
+{% endcode %}
+
+4\. You can run the server with the following command.
+
+```bash
+yarn start
+```
+
+In a new terminal window, test the `/nonce` endpoint to make sure the backend is working:
+
+```bash
+curl 'http://localhost:3000/nonce'
+```
+
+In the same new terminal window, test the `/verify` endpoint use the following, and ensure the response is `true`:
+
+```bash
+curl 'http://localhost:3000/verify' \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"message":"localhost:8080 wants you to sign in with your Ethereum account:\n0x9D85ca56217D2bb651b00f15e694EB7E713637D4\n\nSign in with Ethereum to the app.\n\nURI: http://localhost:8080\nVersion: 1\nChain ID: 1\nNonce: spAsCWHwxsQzLcMzi\nIssued At: 2022-01-29T03:22:26.716Z","signature":"0xe117ad63b517e7b6823e472bf42691c28a4663801c6ad37f7249a1fe56aa54b35bfce93b1e9fa82da7d55bbf0d75ca497843b0702b9dfb7ca9d9c6edb25574c51c"}'
+```
+
+### Note on Verifying Messages
+
+We can verify the received SIWE message by parsing it back into a `SiweMessage` object (the constructor handles this), assigning the received signature to it and calling the `verify` method:
+
+```javascript
+message.verify({ signature })
+```
+
+`message.verify({ signature })` in the above snippet makes sure that the given signature is correct for the message, ensuring that the Ethereum address within the message produced the matching signature.
+
+{% hint style="info" %}
+In other applications, you may wish to do further verification on other fields in the message, for example asserting that the authority matches the expected domain, or checking that the named address has the authority to access the named URI.&#x20;
+
+A small example of this is shown later where the nonce attribute is used to track that a given address has signed the message given by the server.
+{% endhint %}
+
+
+
+Sign in with Ethereum Button
+The Sign in with Ethereum (SIWE) Button component provides a secure authentication method allowing users to sign in using their Ethereum wallet. It implements the Sign in with Ethereum standard for decentralized authentication.
+
+The component features:
+
+Ethereum wallet-based authentication
+Customizable authentication message
+Loading states during signing
+Add to your project
+import { SignInWithEthereum } from 'ethereum-identity-kit'
+ 
+export default function LoginPage() {
+  const handleVerifySignature = async (message: string, nonce: string, signature: string) => {
+    // Verify signature on your backend
+    const response = await fetch('/api/verify-siwe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, nonce, signature }),
+    })
+    return response.ok
+  }
+ 
+  const handleGetNonce = async () => {
+    // Get nonce from your backend
+    const response = await fetch('/api/siwe-nonce')
+    const { nonce } = await response.json()
+    return nonce
+  }
+ 
+  return (
+    <SignInWithEthereum
+      message="Sign in to access your account"
+      verifySignature={handleVerifySignature}
+      getNonce={handleGetNonce}
+      onSignInSuccess={() => console.log('Sign in successful!')}
+      onSignInError={(error) => console.error('Sign in failed:', error)}
+    />
+  )
+}
+
+Try it out! - https://playground.ethidentitykit.com/?path=/story/molecules-sign-in-with-ethereum--button
+
+Sign in with Ethereum
+
+Parameters
+Parameter	Description	Required	Default Value
+verifySignature	Function to verify the signature on your backend. Receives message, nonce, and signature as params.	Yes	-
+getNonce	Function to get a nonce from your backend for security.	Yes	-
+message	The message to display to the user during authentication.	No	-
+onSignInSuccess	Callback function called when the user signs in successfully.	No	-
+onSignInError	Callback function called when sign in fails. Receives error as parameter.	No	-
+darkMode	Enables dark mode styling for the button.	No	false
+expirationTime	The expiration time of the nonce in minutes.	No	5
+Backend Integration
+To use the Sign in with Ethereum button, you’ll need to implement two backend endpoints:
+
+Nonce Generation Endpoint
+// Example: /api/siwe-nonce
+export async function GET() {
+  const nonce = generateNonce() // Generate a secure random nonce
+  // Store nonce in session/database for verification
+  return Response.json({ nonce })
+}
+Signature Verification Endpoint
+// Example: /api/verify-siwe
+export async function POST(request: Request) {
+  const { message, signature } = await request.json()
+ 
+  try {
+    const siweMessage = new SiweMessage(message)
+    const result = await siweMessage.verify({ signature })
+ 
+    if (result.success) {
+      // Create user session, JWT, etc.
+      return Response.json({ success: true })
+    }
+  } catch (error) {
+    return Response.json({ error: 'Invalid signature' }, { status: 400 })
+  }
+}
+Both verifySignature and getNonce functions are required for the component to work properly. Ensure your backend properly validates signatures and manages nonces to maintain security.
+
+The component automatically handles wallet connection prompts and message signing. The button text changes to “Signing Message…” during the authentication process and is disabled to prevent multiple simultaneous attempts.
+
+The component uses predefined styles and can be further customized using CSS classes. The appearance can be manually toggled between light and dark modes using the darkMode prop, however, if you have a dark class applied in your application, the component will automatically use that.
+
+
+
+Translation
+Ethereum Identity Kit supports native internationalization (i18n). This guide shows you how to integrate translations with your existing i18n setup.
+
+Overview
+The library uses a flexible translation system that supports:
+
+Multiple languages with automatic fallbacks
+JSON translation files
+Dynamic language switching
+Integration with existing i18n solutions (react-i18next, react-intl, etc.)
+Backward compatibility with the simple translation function approach
+Playground demo
+Try it out! - https://playground.ethidentitykit.com/?path=/docs/organisms-translation-system--component-docs
+Quick Start
+Method 1: Multiple Languages with Objects
+import { TranslationProvider, ProfileCard, useTranslation } from 'ethereum-identity-kit'
+ 
+const translations = {
+  en: {
+    signInWithEthereum: 'Sign in with Ethereum',
+    follow: 'Follow',
+    unfollow: 'Unfollow',
+  },
+  fr: {
+    signInWithEthereum: 'Se connecter avec Ethereum',
+    follow: 'Suivre',
+    unfollow: 'Ne plus suivre',
+  },
+  es: {
+    signInWithEthereum: 'Iniciar sesión con Ethereum',
+    follow: 'Seguir',
+    unfollow: 'Dejar de seguir',
+  },
+}
+ 
+function LanguageSwitcher() {
+  const { activeLanguage, availableLanguages, setLanguage } = useTranslation()
+ 
+  return (
+    <select value={activeLanguage} onChange={(e) => setLanguage(e.target.value)}>
+      {availableLanguages.map((lang) => (
+        <option key={lang} value={lang}>
+          {lang.toUpperCase()}
+        </option>
+      ))}
+    </select>
+  )
+}
+ 
+function App() {
+  return (
+    <TranslationProvider translations={translations} activeLanguage="fr" fallbackLanguage="en">
+      <LanguageSwitcher />
+      <ProfileCard addressOrName="0x..." />
+    </TranslationProvider>
+  )
+}
+Method 2: Loading from JSON Files
+import { TranslationProvider, ProfileCard, loadTranslationsFromJSON } from 'ethereum-identity-kit'
+ 
+function App() {
+  const [translations, setTranslations] = useState(null)
+ 
+  useEffect(() => {
+    loadTranslationsFromJSON({
+      en: '/locales/en.json',
+      fr: '/locales/fr.json',
+      es: '/locales/es.json',
+    }).then(setTranslations)
+  }, [])
+ 
+  return (
+    <TranslationProvider translationsFromJSON={translations} activeLanguage="fr">
+      <ProfileCard addressOrName="0x..." />
+    </TranslationProvider>
+  )
+}
+Method 3: Custom Translation Function (Backward Compatible)
+import { useTranslation } from 'react-i18next'
+import { TranslationProvider, ProfileCard } from 'ethereum-identity-kit'
+ 
+function App() {
+  const { t } = useTranslation()
+ 
+  const translateFn = (key, fallback) => {
+    return t(`ethereumIdentityKit.${key}`, { defaultValue: fallback })
+  }
+ 
+  return (
+    <TranslationProvider translateFn={translateFn}>
+      <ProfileCard addressOrName="0x..." />
+    </TranslationProvider>
+  )
+}
+Translation Provider Options
+The TranslationProvider accepts the following props:
+
+interface TranslationConfig {
+  // Option 1: Custom translation function (for advanced integration)
+  translateFn?: (key: TranslationKey, fallback?: string) => string
+ 
+  // Option 2: Direct translation objects
+  translations?: Record<string, Partial<Record<TranslationKey, string>>>
+ 
+  // Option 3: Translations loaded from JSON files
+  translationsFromJSON?: Record<string, Partial<Record<TranslationKey, string>>>
+ 
+  // Active language code (e.g., 'en', 'fr', 'es')
+  activeLanguage?: string
+ 
+  // Fallback language when translation is missing (defaults to 'en')
+  fallbackLanguage?: string
+}
+JSON Translation Files
+Create JSON files for each language. Here’s an example structure:
+
+english (en) - https://github.com/ethereumidentitykit/ethereum-identity-kit/blob/ethereum-identity-kit-0.2.48/src/translations/en.json
+spanish (es) - https://github.com/ethereumidentitykit/ethereum-identity-kit/blob/ethereum-identity-kit-0.2.48/src/translations/es.json
+french (fr) - https://github.com/ethereumidentitykit/ethereum-identity-kit/blob/ethereum-identity-kit-0.2.48/src/translations/fr.json
+Truncated Example
+en.json
+
+{
+  "signInWithEthereum": "Sign in with Ethereum",
+  "signingMessage": "Signing Message...",
+  "follow": "Follow",
+  "unfollow": "Unfollow",
+  "following": "Following",
+  "loading": "Loading..."
+}
+Dynamic Language Switching
+Use the useTranslation hook to access language switching functionality:
+
+import { useTranslation } from 'ethereum-identity-kit'
+ 
+function LanguageSelector() {
+  const {
+    activeLanguage, // Current active language
+    availableLanguages, // Array of available language codes
+    setLanguage, // Function to switch languages
+  } = useTranslation()
+ 
+  return (
+    <div>
+      <p>Current language: {activeLanguage}</p>
+      {availableLanguages.map((lang) => (
+        <button key={lang} onClick={() => setLanguage(lang)} disabled={lang === activeLanguage}>
+          {lang}
+        </button>
+      ))}
+    </div>
+  )
+}
+Advanced Examples
+For more advanced usage patterns, see Advanced Translation Examples which covers:
+
+Mixed JSON + custom translations
+Environment-based language detection
+Integration with existing i18n libraries
+Partial translations with fallbacks
+Performance optimization techniques
+Helper Functions
+loadTranslationsFromJSON
+Utility function to load translations from JSON files:
+
+import { loadTranslationsFromJSON } from 'ethereum-identity-kit'
+ 
+const translations = await loadTranslationsFromJSON({
+  en: '/locales/en.json',
+  fr: '/locales/fr.json',
+  es: '/locales/es.json',
+})
+defaultTranslations
+Import default English translations to use as a base:
+
+import { defaultTranslations, TranslationKey } from 'ethereum-identity-kit'
+ 
+const myTranslations: Record<TranslationKey, string> = {
+  ...defaultTranslations,
+  // Override specific translations
+  signInWithEthereum: 'Custom Sign In Text',
+}
+Migration Guide
+From Simple Translation Function
+If you were using the simple translateFn approach:
+
+// Before (still works)
+<TranslationProvider translateFn={myTranslateFn}>
+ 
+// New options
+<TranslationProvider translations={multiLangObject}>
+<TranslationProvider translationsFromJSON={loadedTranslations}>
+Adding New Languages
+Create a new JSON file or add to your translations object
+The language will automatically appear in availableLanguages
+Users can switch to it using setLanguage(newLang)
+TypeScript Support
+Full TypeScript support with strict typing:
+
+import { TranslationKey, TranslationFunction, TranslationConfig, TranslationsMap } from 'ethereum-identity-kit'
+ 
+const myTranslations: TranslationsMap = {
+  en: { signInWithEthereum: 'Sign in with Ethereum' },
+  fr: { signInWithEthereum: 'Se connecter avec Ethereum' },
+}
+
+
+
+useProfileDetails
+The useProfileDetails hook fetches and manages the profile details for a given Ethereum address or ENS name, including ENS data and primary list information.
+
+Add to your project
+import { useProfileDetails } from 'ethereum-identity-kit'
+ 
+export default function ProfileComponent() {
+  const { ens, address, primaryList, detailsLoading, refreshProfileDetails } = useProfileDetails({
+    addressOrName: 'vitalik.eth',
+  })
+ 
+  if (detailsLoading) return <div>Loading...</div> // Create your own loading states
+ 
+  // --- Your component code here ---
+}
+
+Parameters
+Parameter	Description	Required	Default Value
+addressOrName	Ethereum Address or ENS name to fetch profile details for.	Yes	-
+list	List number to fetch profile details for; overrides addressOrName if provided.	No	-
+prefetchedData	Prefetched profile data to use initially.	No	-
+refetchPrefetchedData	Function to refetch prefetched profile data.	No	-
+Either addressOrName or list must be provided. If both are provided, list will take precedence.
+
+Return Values
+The hook provides comprehensive profile data including ENS information, address, and primary list number. Use refreshProfileDetails to manually update the data when needed.
+
+Return Value	Description
+ens	ENS data for the profile, including name and records.
+address	Ethereum address associated with the profile.
+primaryList	Primary list number associated with the profile.
+detailsLoading	Boolean indicating if the profile details are currently loading.
+refreshProfileDetails	Function to manually refresh the profile details.
+
+
+
+useProfileStats
+The useProfileStats hook fetches and manages the follower and following statistics for a given Ethereum address or ENS name.
+
+Add to your project
+import { useProfileStats } from 'ethereum-identity-kit'
+ 
+export default function StatsComponent() {
+  const { followers, following, statsLoading, refreshProfileStats } = useProfileStats({
+    addressOrName: 'vitalik.eth',
+  })
+ 
+  // Create your own loading states
+  if (statsLoading) return <div>Loading...</div>
+ 
+  // --- Your component code here ---
+}
+
+Parameters
+Parameter	Description	Required	Default Value
+addressOrName	Ethereum Address or ENS name to fetch profile stats for.	Yes	-
+list	List number to fetch profile stats for; overrides addressOrName if provided.	No	-
+prefetchedData	Prefetched stats data to use initially.	No	-
+refetchPrefetchedData	Function to refetch prefetched stats data.	No	-
+Return Values
+Return Value	Description
+followers	Number of followers for the profile.
+following	Number of accounts the profile is following.
+statsLoading	Boolean indicating if the profile stats are currently loading.
+refreshProfileStats	Function to manually refresh the profile stats.
+
+
+useUserInfo
+The useUserInfo hook provides comprehensive functionality for fetching and managing a user’s followers and following data, including advanced features like tag filtering, search, sorting, and infinite pagination.
+
+Add to your project
+import { useUserInfo } from 'ethereum-identity-kit'
+ 
+export default function UserProfile() {
+  const {
+    followers,
+    following,
+    followerTags,
+    followingTags,
+    followersIsLoading,
+    followingIsLoading,
+    fetchMoreFollowers,
+    fetchMoreFollowing,
+    followingSearch,
+    setFollowingSearch,
+    followingSort,
+    setFollowingSort,
+    toggleTag,
+  } = useUserInfo('vitalik.eth')
+ 
+  // --- Your component code here ---
+}
+
+Parameters
+Parameter	Description	Required	Type
+user	Ethereum Address, ENS name, or list number to fetch followers/following data for.	Yes	string
+The hook automatically detects whether the input is an address, ENS name, or list number and handles the API calls accordingly.
+
+Return Values
+Core Data
+Return Value	Description	Type
+followers	Array of follower profiles with address and tag information.	FollowerResponse[]
+following	Array of following profiles with address and tag information.	FollowingResponse[]
+followerTags	Tag data for followers including counts and categories.	TagsResponse
+followingTags	Tag data for following including counts and categories.	TagsResponse
+listNum	List number if the user input was a valid list.	number | undefined
+userIsList	Boolean indicating if the user input represents a list number.	boolean
+Loading States
+Return Value	Description	Type
+followersIsLoading	Loading state for followers data (includes refetching).	boolean
+followingIsLoading	Loading state for following data (includes refetching).	boolean
+followerTagsLoading	Loading state for follower tags data.	boolean
+followingTagsLoading	Loading state for following tags data.	boolean
+Pagination
+Return Value	Description	Type
+fetchMoreFollowers	Function to fetch next page of followers.	() => Promise<InfiniteQueryObserverResult>
+fetchMoreFollowing	Function to fetch next page of following.	() => Promise<InfiniteQueryObserverResult>
+isEndOfFollowers	Boolean indicating if all followers have been loaded.	boolean
+isEndOfFollowing	Boolean indicating if all following have been loaded.	boolean
+isFetchingMoreFollowers	Boolean indicating if currently fetching more followers.	boolean
+isFetchingMoreFollowing	Boolean indicating if currently fetching more following.	boolean
+Search & Filtering
+Return Value	Description	Type
+followersSearch	Current search query for followers.	string
+followingSearch	Current search query for following.	string
+setFollowersSearch	Function to update followers search query.	(search: string) => void
+setFollowingSearch	Function to update following search query.	(search: string) => void
+followersTagsFilter	Array of selected tag filters for followers.	string[]
+followingTagsFilter	Array of selected tag filters for following.	string[]
+setFollowersTagsFilter	Function to set follower tag filters.	(tags: string[]) => void
+setFollowingTagsFilter	Function to set following tag filters.	(tags: string[]) => void
+toggleTag	Function to toggle a specific tag filter for followers/following.	(tab: ProfileTabType, tag: string) => void
+Sorting
+Return Value	Description	Type
+followersSort	Current sort option for followers.	FollowSortType
+followingSort	Current sort option for following.	FollowSortType
+setFollowersSort	Function to update followers sort option.	(sort: FollowSortType) => void
+setFollowingSort	Function to update following sort option.	(sort: FollowSortType) => void
+Features
+Automatic Data Validation
+The hook automatically validates the input and determines whether it’s an Ethereum address, ENS name, or list number.
+
+Infinite Pagination
+Built-in infinite scrolling support with pagination management and end-of-data detection.
+
+Advanced Filtering
+Search: Filter by profile name or address
+Tags: Filter by custom tags with multi-select support
+Sorting: Multiple sort options including follower count, alphabetical, and more
+Performance Optimization
+Stale Time: 30-second cache for reduced API calls
+Conditional Fetching: Only fetches when valid user data is provided
+Refetch Control: Disabled window focus refetching for better UX
+Tag Management
+Comprehensive tag system with counting, filtering, and toggle functionality for both followers and following lists.
+
+The hook expects a valid Ethereum address, ENS name, or list number. Invalid inputs will result in empty data arrays but won’t cause errors.
+
+This hook uses React Query for data fetching and caching. It provides automatic background updates and error handling while maintaining a responsive user experience.
+
+Example Usage
+import { useUserInfo } from 'ethereum-identity-kit'
+ 
+function UserFollowersPage({ userAddress }) {
+  const {
+    followers,
+    following,
+    followersIsLoading,
+    fetchMoreFollowers,
+    isEndOfFollowers,
+    followingSearch,
+    setFollowingSearch,
+    followingSort,
+    setFollowingSort,
+    toggleTag,
+  } = useUserInfo(userAddress)
+ 
+  return (
+    <div>
+      <input
+        value={followingSearch}
+        onChange={(e) => setFollowingSearch(e.target.value)}
+        placeholder="Search following..."
+      />
+ 
+      <select value={followingSort} onChange={(e) => setFollowingSort(e.target.value)}>
+        <option value="follower count">By Followers</option>
+        <option value="alphabetical">Alphabetical</option>
+      </select>
+ 
+      {followersIsLoading ? (
+        <div>Loading...</div>
+      ) : (
+        <div>
+          {followers.map((follower) => (
+            <div key={follower.address}>{/* Render follower */}</div>
+          ))}
+ 
+          {!isEndOfFollowers && <button onClick={() => fetchMoreFollowers()}>Load More</button>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+
+useSiwe
+The useSiwe hook provides functionality for implementing Sign in with Ethereum (SIWE) authentication. It handles the complete SIWE flow including message creation, wallet signing, and backend verification while managing loading states and error handling.
+
+Add to your project
+import { useSiwe } from 'ethereum-identity-kit'
+ 
+export default function SignInComponent() {
+  const handleVerifySignature = async (message: string, signature: string) => {
+    // Verify signature on your backend
+    const response = await fetch('/api/verify-siwe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, signature }),
+    })
+    return response.ok
+  }
+ 
+  const handleGetNonce = async () => {
+    // Get nonce from your backend
+    const response = await fetch('/api/siwe-nonce')
+    const { nonce } = await response.json()
+    return nonce
+  }
+ 
+  const { handleSignIn, isSigningMessage } = useSiwe({
+    verifySignature: handleVerifySignature,
+    getNonce: handleGetNonce,
+    onSignInSuccess: ({ address, message, signature }) => {
+      console.log('Sign in successful!', { address, message, signature })
+    },
+    onSignInError: (error) => {
+      console.error('Sign in failed:', error)
+    },
+    statement: 'Sign in to access your account',
+    expirationTime: 300000, // 5 minutes in milliseconds
+  })
+ 
+  return (
+    <button onClick={handleSignIn} disabled={isSigningMessage}>
+      {isSigningMessage ? 'Signing Message...' : 'Sign In with Ethereum'}
+    </button>
+  )
+}
+
+Parameters
+Parameter	Description	Required	Default Value
+verifySignature	Function to verify the signature on your backend. Receives message and signature as params.	Yes	-
+getNonce	Function to get a nonce from your backend for security.	Yes	-
+statement	The statement to display to the user during authentication.	No	-
+onSignInSuccess	Callback function called when the user signs in successfully.	No	-
+onSignInError	Callback function called when sign in fails. Receives error as parameter.	No	-
+expirationTime	The expiration time of the nonce in milliseconds.	No	300000 (5 min)
+Both verifySignature and getNonce functions are required for the hook to work properly. Ensure your backend properly validates signatures and manages nonces to maintain security.
+
+Return Values
+Return Value	Description
+handleSignIn	Function to initiate the SIWE authentication flow. Handles message creation and signing.
+isSigningMessage	Boolean indicating if a message is currently being signed by the user’s wallet.
+SIWE Message Parameters
+The hook automatically creates a SIWE message with the following parameters:
+
+Domain: Current window host
+Address: Connected wallet address
+Statement: Custom statement provided in hook parameters
+URI: Current window origin
+Version: SIWE version (always “1”)
+Chain ID: Current blockchain network ID
+Nonce: Secure nonce from your backend
+Issued At: Current timestamp
+Expiration Time: Calculated from expirationTime parameter
+Error Handling
+The hook provides comprehensive error handling for common scenarios:
+
+User Rejection: When users reject the signature request
+Network Issues: Connection problems during backend verification
+Invalid Signatures: Backend verification failures
+Missing Requirements: No connected wallet or chain ID
+The hook automatically detects when users reject signature requests and provides appropriate error messages. All errors are passed to the onSignInError callback if provided.
+
+Backend Integration Requirements
+To use this hook, you’ll need to implement two backend endpoints:
+
+1. Nonce Generation (getNonce)
+// Example implementation
+export async function GET() {
+  const nonce = generateSecureNonce()
+  // Store nonce in session/database
+  return Response.json({ nonce })
+}
+2. Signature Verification (verifySignature)
+// Example implementation
+export async function POST(request: Request) {
+  const { message, signature } = await request.json()
+ 
+  try {
+    const siweMessage = new SiweMessage(message)
+    const result = await siweMessage.verify({ signature })
+ 
+    if (result.success) {
+      // Create user session
+      return Response.json({ success: true })
+    }
+  } catch (error) {
+    return Response.json({ error: 'Invalid signature' }, { status: 400 })
+  }
+}
+The hook uses wagmi’s useSignMessage hook internally and requires a wallet to be connected. Ensure your application has proper wallet connection setup before using this hook.
+
+
+
+
+useTransactions
+The useTransactions hook provides access to the transaction context, allowing components to manage and interact with on-chain transactions. It offers state management and utility functions for handling transaction modals, batching, and more.
+
+This hook must be used within a TransactionProvider context. Make sure your component is wrapped with TransactionProvider.
+
+The hook provides comprehensive transaction management capabilities including batching, chain selection, and transaction state tracking.
+
+Add to your project
+import { useTransactions } from 'ethereum-identity-kit'
+ 
+export default function TransactionComponent() {
+  const {
+    txModalOpen,
+    setTxModalOpen,
+    pendingTxs,
+    addTransactions,
+    goToNextTransaction,
+    resetTransactions,
+    isCheckoutFinished,
+  } = useTransactions()
+ 
+  // Example usage
+  if (txModalOpen) {
+    return <div>Transaction Modal is Open</div>
+  }
+ 
+  return <button onClick={() => setTxModalOpen(true)}>Open Transaction Modal</button>
+}
+
+Return Values
+Return Value	Description
+txModalOpen	Boolean indicating if the transaction modal is open.
+setTxModalOpen	Function to set the txModalOpen state.
+pendingTxs	Array of pending transactions.
+addTransactions	Function to add new transactions (any transaction).
+goToNextTransaction	Function to proceed to the next transaction.
+resetTransactions	Function to reset all transactions.
+isCheckoutFinished	Boolean indicating if the checkout process is finished.
+selectedChainId	ID of the selected chain for EFP list transactions.
+setSelectedChainId	Function to set the selectedChainId.
+currentTxIndex	Index of the current transaction being processed.
+setCurrentTxIndex	Function to set the currentTxIndex.
+lists	EFP lists of the connected user.
+listsLoading	Boolean indicating if the lists are loading.
+addListOpsTransaction	Function to add a list operations transaction.
+removeTransactions	Function to remove transactions by their IDs.
+removeListOpsTransaction	Function to remove list operations transactions by their data.
+selectedList	Currently selected list.
+setSelectedList	Function to set the selectedList.
+nonce	Nonce for the current transaction.
+setIsCheckoutFinished	Function to set the isCheckoutFinished state.
+txModalOpen
+Description:
+A boolean indicating whether the transaction modal is currently open.
+
+Example:
+
+const { txModalOpen, setTxModalOpen } = useTransactions()
+ 
+// Open the transaction modal
+setTxModalOpen(true)
+setTxModalOpen
+Description:
+A function to set the txModalOpen state, controlling the visibility of the transaction modal.
+
+Example:
+
+setTxModalOpen(false) // Closes the transaction modal
+pendingTxs
+Description:
+An array of pending transactions that are queued for processing.
+
+Example:
+
+const { pendingTxs } = useTransactions()
+console.log(pendingTxs) // Logs the list of pending transactions
+addTransactions
+Description:
+A function to add new transactions to the pending transactions list. You can add any transaction in the following format.
+
+Example:
+
+const txs = [
+  {
+    id: 'tx1',
+    title: 'Transaction', // Title of the transaction to be displayed in the modal
+    description: 'This transaction will do something', // Description of the transaction to be displayed in the modal
+    address: '0x123', // Contract address
+    abi: contractAbi, // ABI of the contract
+    chainId: 1, // Chain ID
+    functionName: 'function', // Function name
+    args: [arg1, arg2], // Arguments to be passed to the function
+  },
+  // ...
+]
+ 
+addTransactions(txs)
+When adding transactions, ensure all required fields (id, title, description, address, abi, chainId, functionName, args) are provided.
+
+addListOpsTransaction
+Description:
+A function to add a list operations to pending transactions. This is handled by the Follow Button component, however you can use it to add a list operations transaction manually.
+
+Example:
+
+import {
+  useTransactions,
+  listOpAddListRecord,
+  listOpRemoveListRecord,
+  listOpAddTag,
+  listOpRemoveTag,
+} from 'ethereum-identity-kit'
+ 
+const { addListOpsTransaction } = useTransactions()
+ 
+const listOps = []
+listOps.push(listOpAddListRecord('0x1234...')) // Add a list record - follow
+listOps.push(listOpRemoveListRecord('0x1234...')) // Remove a list record - unfollow
+listOps.push(listOpAddTag('0x1234...', 'myTag')) // Add a tag
+listOps.push(listOpRemoveTag('0x1234...', 'myTag')) // Remove a tag
+ 
+addListOpsTransaction(listOps)
+This function is primarily used by the Follow Button component, but can be used manually for custom list operations.
+
+removeTransactions
+Description:
+A function to remove transactions by their IDs.
+
+Example:
+
+removeTransactions(['tx1', 'tx2'])
+removeListOpsTransaction
+Description:
+A function to remove list operations transactions by their data.
+
+Example:
+
+import {
+  useTransactions,
+  listOpAddListRecord,
+  listOpRemoveListRecord,
+  listOpAddTag,
+  listOpRemoveTag,
+} from 'ethereum-identity-kit'
+ 
+const { removeListOpsTransaction } = useTransactions()
+ 
+const listOpsData = []
+listOpsData.push(listOpAddListRecord('0x1234...').data) // Add a list record - follow
+listOpsData.push(listOpRemoveListRecord('0x1234...').data) // Remove a list record - unfollow
+listOpsData.push(listOpAddTag('0x1234...', 'myTag').data) // Add a tag
+listOpsData.push(listOpRemoveTag('0x1234...', 'myTag').data) // Remove a tag
+ 
+removeListOpsTransaction(listOpsData)
+goToNextTransaction
+Description:
+A function to proceed to the next transaction in the queue.
+
+Example:
+
+goToNextTransaction() // Moves to the next transaction
+resetTransactions
+Description:
+A function to reset all transactions, optionally keeping the modal open.
+
+Example:
+
+resetTransactions() // Resets all transactions and closes the modal
+resetTransactions(true) // Resets all transactions but keeps the modal open
+isCheckoutFinished
+Description:
+A boolean indicating if the checkout process is complete.
+
+Example:
+
+const { isCheckoutFinished } = useTransactions()
+if (isCheckoutFinished) {
+  console.log('Checkout is complete')
+}
+selectedChainId
+Description:
+The ID of the selected blockchain network for transactions.
+
+Example:
+
+const { selectedChainId, setSelectedChainId } = useTransactions()
+setSelectedChainId(1) // Sets the selected chain to Ethereum Mainnet
+setSelectedChainId
+Description:
+A function to set the selectedChainId.
+
+Example:
+
+setSelectedChainId(137) // Sets the selected chain to Polygon
+currentTxIndex
+Description:
+The index of the current transaction being processed.
+
+Example:
+
+const { currentTxIndex } = useTransactions()
+console.log(`Current transaction index: ${currentTxIndex}`)
+setCurrentTxIndex
+Description:
+A function to set the currentTxIndex.
+
+Example:
+
+setCurrentTxIndex(2) // Sets the current transaction index to 2
+lists
+Description:
+The EFP lists associated with the connected user.
+
+Example:
+
+const { lists } = useTransactions()
+console.log(lists) // Logs the user's EFP lists
+listsLoading
+Description:
+A boolean indicating if the lists are currently loading.
+
+Example:
+
+const { listsLoading } = useTransactions()
+if (listsLoading) {
+  console.log('Lists are loading...')
+}
+selectedList
+Description:
+The currently selected list for operations.
+
+Example:
+
+const { selectedList, setSelectedList } = useTransactions()
+setSelectedList('myList')
+setSelectedList
+Description:
+A function to set the selectedList.
+
+Example:
+
+setSelectedList('newList')
+nonce
+Description:
+The nonce for the current transaction.
+
+Example:
+
+const { nonce } = useTransactions()
+console.log(`Current nonce: ${nonce}`)
+setIsCheckoutFinished
+Description:
+A function to set the isCheckoutFinished state.
+
+Example:
+
+setIsCheckoutFinished(true) // Marks the checkout as finished
+followingAddressesToFetchFresh
+Description:
+An array of addresses that need fresh data fetching.
+
+Example:
+
+const { followingAddressesToFetchFresh } = useTransactions()
+console.log(followingAddressesToFetchFresh) // Logs addresses to fetch fresh data for
+Notes
+You can use all of the returned values to create your own custom transaction modal, however the hook is mostly used to manage the Ethereum Identity Kit transaction modal and the transaction state.
+
+Ensure that the useTransactions hook is used within a TransactionProvider to access the transaction context.
+The txModalOpen state controls the visibility of the transaction modal.
+Use the provided functions to manage transactions, such as adding, removing, and resetting them.
+
+
+
+useTransactions
+The useTransactions hook provides access to the transaction context, allowing components to manage and interact with on-chain transactions. It offers state management and utility functions for handling transaction modals, batching, and more.
+
+This hook must be used within a TransactionProvider context. Make sure your component is wrapped with TransactionProvider.
+
+The hook provides comprehensive transaction management capabilities including batching, chain selection, and transaction state tracking.
+
+Add to your project
+import { useTransactions } from 'ethereum-identity-kit'
+ 
+export default function TransactionComponent() {
+  const {
+    txModalOpen,
+    setTxModalOpen,
+    pendingTxs,
+    addTransactions,
+    goToNextTransaction,
+    resetTransactions,
+    isCheckoutFinished,
+  } = useTransactions()
+ 
+  // Example usage
+  if (txModalOpen) {
+    return <div>Transaction Modal is Open</div>
+  }
+ 
+  return <button onClick={() => setTxModalOpen(true)}>Open Transaction Modal</button>
+}
+
+Return Values
+Return Value	Description
+txModalOpen	Boolean indicating if the transaction modal is open.
+setTxModalOpen	Function to set the txModalOpen state.
+pendingTxs	Array of pending transactions.
+addTransactions	Function to add new transactions (any transaction).
+goToNextTransaction	Function to proceed to the next transaction.
+resetTransactions	Function to reset all transactions.
+isCheckoutFinished	Boolean indicating if the checkout process is finished.
+selectedChainId	ID of the selected chain for EFP list transactions.
+setSelectedChainId	Function to set the selectedChainId.
+currentTxIndex	Index of the current transaction being processed.
+setCurrentTxIndex	Function to set the currentTxIndex.
+lists	EFP lists of the connected user.
+listsLoading	Boolean indicating if the lists are loading.
+addListOpsTransaction	Function to add a list operations transaction.
+removeTransactions	Function to remove transactions by their IDs.
+removeListOpsTransaction	Function to remove list operations transactions by their data.
+selectedList	Currently selected list.
+setSelectedList	Function to set the selectedList.
+nonce	Nonce for the current transaction.
+setIsCheckoutFinished	Function to set the isCheckoutFinished state.
+txModalOpen
+Description:
+A boolean indicating whether the transaction modal is currently open.
+
+Example:
+
+const { txModalOpen, setTxModalOpen } = useTransactions()
+ 
+// Open the transaction modal
+setTxModalOpen(true)
+setTxModalOpen
+Description:
+A function to set the txModalOpen state, controlling the visibility of the transaction modal.
+
+Example:
+
+setTxModalOpen(false) // Closes the transaction modal
+pendingTxs
+Description:
+An array of pending transactions that are queued for processing.
+
+Example:
+
+const { pendingTxs } = useTransactions()
+console.log(pendingTxs) // Logs the list of pending transactions
+addTransactions
+Description:
+A function to add new transactions to the pending transactions list. You can add any transaction in the following format.
+
+Example:
+
+const txs = [
+  {
+    id: 'tx1',
+    title: 'Transaction', // Title of the transaction to be displayed in the modal
+    description: 'This transaction will do something', // Description of the transaction to be displayed in the modal
+    address: '0x123', // Contract address
+    abi: contractAbi, // ABI of the contract
+    chainId: 1, // Chain ID
+    functionName: 'function', // Function name
+    args: [arg1, arg2], // Arguments to be passed to the function
+  },
+  // ...
+]
+ 
+addTransactions(txs)
+When adding transactions, ensure all required fields (id, title, description, address, abi, chainId, functionName, args) are provided.
+
+addListOpsTransaction
+Description:
+A function to add a list operations to pending transactions. This is handled by the Follow Button component, however you can use it to add a list operations transaction manually.
+
+Example:
+
+import {
+  useTransactions,
+  listOpAddListRecord,
+  listOpRemoveListRecord,
+  listOpAddTag,
+  listOpRemoveTag,
+} from 'ethereum-identity-kit'
+ 
+const { addListOpsTransaction } = useTransactions()
+ 
+const listOps = []
+listOps.push(listOpAddListRecord('0x1234...')) // Add a list record - follow
+listOps.push(listOpRemoveListRecord('0x1234...')) // Remove a list record - unfollow
+listOps.push(listOpAddTag('0x1234...', 'myTag')) // Add a tag
+listOps.push(listOpRemoveTag('0x1234...', 'myTag')) // Remove a tag
+ 
+addListOpsTransaction(listOps)
+This function is primarily used by the Follow Button component, but can be used manually for custom list operations.
+
+removeTransactions
+Description:
+A function to remove transactions by their IDs.
+
+Example:
+
+removeTransactions(['tx1', 'tx2'])
+removeListOpsTransaction
+Description:
+A function to remove list operations transactions by their data.
+
+Example:
+
+import {
+  useTransactions,
+  listOpAddListRecord,
+  listOpRemoveListRecord,
+  listOpAddTag,
+  listOpRemoveTag,
+} from 'ethereum-identity-kit'
+ 
+const { removeListOpsTransaction } = useTransactions()
+ 
+const listOpsData = []
+listOpsData.push(listOpAddListRecord('0x1234...').data) // Add a list record - follow
+listOpsData.push(listOpRemoveListRecord('0x1234...').data) // Remove a list record - unfollow
+listOpsData.push(listOpAddTag('0x1234...', 'myTag').data) // Add a tag
+listOpsData.push(listOpRemoveTag('0x1234...', 'myTag').data) // Remove a tag
+ 
+removeListOpsTransaction(listOpsData)
+goToNextTransaction
+Description:
+A function to proceed to the next transaction in the queue.
+
+Example:
+
+goToNextTransaction() // Moves to the next transaction
+resetTransactions
+Description:
+A function to reset all transactions, optionally keeping the modal open.
+
+Example:
+
+resetTransactions() // Resets all transactions and closes the modal
+resetTransactions(true) // Resets all transactions but keeps the modal open
+isCheckoutFinished
+Description:
+A boolean indicating if the checkout process is complete.
+
+Example:
+
+const { isCheckoutFinished } = useTransactions()
+if (isCheckoutFinished) {
+  console.log('Checkout is complete')
+}
+selectedChainId
+Description:
+The ID of the selected blockchain network for transactions.
+
+Example:
+
+const { selectedChainId, setSelectedChainId } = useTransactions()
+setSelectedChainId(1) // Sets the selected chain to Ethereum Mainnet
+setSelectedChainId
+Description:
+A function to set the selectedChainId.
+
+Example:
+
+setSelectedChainId(137) // Sets the selected chain to Polygon
+currentTxIndex
+Description:
+The index of the current transaction being processed.
+
+Example:
+
+const { currentTxIndex } = useTransactions()
+console.log(`Current transaction index: ${currentTxIndex}`)
+setCurrentTxIndex
+Description:
+A function to set the currentTxIndex.
+
+Example:
+
+setCurrentTxIndex(2) // Sets the current transaction index to 2
+lists
+Description:
+The EFP lists associated with the connected user.
+
+Example:
+
+const { lists } = useTransactions()
+console.log(lists) // Logs the user's EFP lists
+listsLoading
+Description:
+A boolean indicating if the lists are currently loading.
+
+Example:
+
+const { listsLoading } = useTransactions()
+if (listsLoading) {
+  console.log('Lists are loading...')
+}
+selectedList
+Description:
+The currently selected list for operations.
+
+Example:
+
+const { selectedList, setSelectedList } = useTransactions()
+setSelectedList('myList')
+setSelectedList
+Description:
+A function to set the selectedList.
+
+Example:
+
+setSelectedList('newList')
+nonce
+Description:
+The nonce for the current transaction.
+
+Example:
+
+const { nonce } = useTransactions()
+console.log(`Current nonce: ${nonce}`)
+setIsCheckoutFinished
+Description:
+A function to set the isCheckoutFinished state.
+
+Example:
+
+setIsCheckoutFinished(true) // Marks the checkout as finished
+followingAddressesToFetchFresh
+Description:
+An array of addresses that need fresh data fetching.
+
+Example:
+
+const { followingAddressesToFetchFresh } = useTransactions()
+console.log(followingAddressesToFetchFresh) // Logs addresses to fetch fresh data for
+Notes
+You can use all of the returned values to create your own custom transaction modal, however the hook is mostly used to manage the Ethereum Identity Kit transaction modal and the transaction state.
+
+Ensure that the useTransactions hook is used within a TransactionProvider to access the transaction context.
+The txModalOpen state controls the visibility of the transaction modal.
+Use the provided functions to manage transactions, such as adding, removing, and resetting them.
+
+
+
+useTranslation
+The useTranslation hook provides internationalization support for the Ethereum Identity Kit. It allows you to access translation functionality, manage the active language, and switch between available languages in your application.
+
+This hook provides default English translations when used outside of a TranslationProvider context. For full internationalization support, wrap your component with TranslationProvider.
+
+The hook gracefully falls back to English translations and provides a no-op setLanguage function when no provider is available, ensuring your application remains functional.
+
+Add to your project
+import { useTranslation } from 'ethereum-identity-kit'
+ 
+export default function TranslatedComponent() {
+  const { t, activeLanguage, availableLanguages, setLanguage } = useTranslation()
+ 
+  return (
+    <div>
+      <h1>{t('welcome.title')}</h1>
+      <p>{t('welcome.description')}</p>
+ 
+      <div>
+        <span>Current Language: {activeLanguage}</span>
+        <select value={activeLanguage} onChange={(e) => setLanguage(e.target.value)}>
+          {availableLanguages.map((lang) => (
+            <option key={lang} value={lang}>
+              {lang.toUpperCase()}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  )
+}
+
+Return Values
+Return Value	Description
+t	Translation function to get localized strings.
+activeLanguage	Currently active language code (e.g., ‘en’, ‘es’, ‘fr’).
+availableLanguages	Array of available language codes.
+setLanguage	Function to change the active language.
+t
+Description:
+The translation function that returns localized strings based on the provided key. When no TranslationProvider is available, it defaults to English translations.
+
+Example:
+
+const { t } = useTranslation()
+ 
+// Basic translation
+const welcomeText = t('welcome.message')
+ 
+// Translation with parameters (if supported by your translation function)
+const personalizedGreeting = t('greeting.user', { name: 'Alice' })
+activeLanguage
+Description:
+A string representing the currently active language code. Defaults to ‘en’ when no TranslationProvider is available.
+
+Example:
+
+const { activeLanguage } = useTranslation()
+console.log(`Current language: ${activeLanguage}`) // Current language: en
+availableLanguages
+Description:
+An array of available language codes that users can switch between. Defaults to ['en'] when no TranslationProvider is available.
+
+Example:
+
+const { availableLanguages } = useTranslation()
+ 
+// Display language selector
+return (
+  <select>
+    {availableLanguages.map((lang) => (
+      <option key={lang} value={lang}>
+        {lang.toUpperCase()}
+      </option>
+    ))}
+  </select>
+)
+setLanguage
+Description:
+A function to change the active language. When no TranslationProvider is available, this function is a no-op (does nothing).
+
+Example:
+
+const { setLanguage } = useTranslation()
+ 
+// Change language to Spanish
+const handleLanguageChange = (newLanguage: string) => {
+  setLanguage(newLanguage)
+}
+ 
+// In a click handler
+;<button onClick={() => setLanguage('es')}>Switch to Spanish</button>
+Notes
+The hook provides graceful fallbacks when used outside of a TranslationProvider context
+Default behavior includes English translations and a single ‘en’ language option
+The setLanguage function will be a no-op when no provider is available
+For full internationalization features, ensure your component tree is wrapped with a TranslationProvider
+Translation keys should follow a consistent naming convention (e.g., ‘section.subsection.key’)
+Consider implementing a TranslationProvider at your application root to take full advantage of the internationalization features provided by this hook.
+
+
+
+
+useETHPrice
+The useETHPrice hook fetches the real-time ETH price from the Chainlink oracle on-chain. This hook provides accurate, decentralized price data that can be used for gas cost calculations and other price-related features.
+
+Usage
+import { useETHPrice } from 'ethereum-identity-kit'
+ 
+function MyComponent() {
+  const { ethPrice, isLoading, error } = useETHPrice()
+ 
+  if (isLoading) return <div>Loading ETH price...</div>
+  if (error) return <div>Error loading price</div>
+ 
+  return (
+    <div>
+      Current ETH Price: ${ethPrice?.toFixed(2)}
+    </div>
+  )
+}
+Features
+Real-time Updates: Fetches current ETH price from Chainlink oracle
+Decentralized: Uses on-chain oracle data instead of centralized APIs
+Gas Cost Calculations: Ideal for calculating transaction costs in USD
+TypeScript Support: Fully typed return values
+Return Value
+The hook returns an object with the following properties:
+
+Property	Type	Description
+ethPrice	number | null	Current ETH price in USD
+isLoading	boolean	Loading state indicator
+error	Error | null	Error object if the fetch fails
+Example: Gas Cost Calculator
+import { useETHPrice } from 'ethereum-identity-kit'
+ 
+function GasCostCalculator({ gasAmount, gasPrice }) {
+  const { ethPrice } = useETHPrice()
+ 
+  if (!ethPrice) return null
+ 
+  const gasCostInETH = (gasAmount * gasPrice) / 1e9 // Convert gwei to ETH
+  const gasCostInUSD = gasCostInETH * ethPrice
+ 
+  return (
+    <div>
+      <p>Gas Cost: {gasCostInETH.toFixed(6)} ETH</p>
+      <p>≈ ${gasCostInUSD.toFixed(2)} USD</p>
+    </div>
+  )
+}
+Notes
+The hook uses Chainlink’s ETH/USD price feed for accurate pricing
+Price updates automatically when the oracle updates
+No API keys or configuration required
+Works on all supported networks with Chainlink oracles
+
+
+
+
+SIWE
+The SIWE utilities provide functions for creating and formatting Sign in with Ethereum (SIWE) messages according to the EIP-4361 standard.
+
+Import
+import { createSiweMessageString } from 'ethereum-identity-kit'
+ 
+// For server side usage
+import { createSiweMessageString } from 'ethereum-identity-kit/utils'
+Functions
+createSiweMessageString
+Creates a properly formatted SIWE message string from the provided parameters according to the EIP-4361 specification.
+
+const message = createSiweMessageString({
+  domain: 'example.com',
+  address: '0x1234567890123456789012345678901234567890',
+  uri: 'https://example.com',
+  version: '1',
+  chainId: 1,
+  nonce: 'abcd1234',
+  issuedAt: '2023-10-01T12:00:00.000Z',
+  statement: 'Sign in to access your account',
+  expirationTime: '2023-10-01T12:05:00.000Z',
+})
+Parameters
+Parameter	Type	Description	Required
+domain	string	The domain that is requesting the signing	Yes
+address	string	Ethereum address performing the signing	Yes
+uri	string	A URI the user is signing in to	Yes
+version	string	Current version of the SIWE Message (should be “1”)	Yes
+chainId	number	EIP-155 Chain ID to which the session is bound	Yes
+nonce	string	Randomized token to prevent replay attacks	Yes
+issuedAt	string	ISO 8601 datetime string of when the message was generated	Yes
+statement	string	Human-readable ASCII assertion that the user will sign	No
+expirationTime	string	ISO 8601 datetime string of when the signed authentication expires	No
+notBefore	string	ISO 8601 datetime string of when the signed authentication becomes valid	No
+requestId	string	System-specific identifier that may be used to refer back to the request	No
+resources	string[]	List of information or references to information the user wishes to have resolved	No
+scheme	string	The scheme of the URI (typically omitted for web applications)	No
+Return Value
+Returns a string containing the properly formatted SIWE message that conforms to the EIP-4361 standard.
+
+Example Output
+example.com wants you to sign in with your Ethereum account:
+0x1234567890123456789012345678901234567890
+Sign in to access your account
+URI: https://example.com
+Version: 1
+Chain ID: 1
+Nonce: abcd1234
+Issued At: 2023-10-01T12:00:00.000Z
+Expiration Time: 2023-10-01T12:05:00.000Z
+Example with All Parameters
+const message = createSiweMessageString({
+  scheme: 'https',
+  domain: 'example.com',
+  address: '0x1234567890123456789012345678901234567890',
+  statement: 'I accept the ExampleOrg Terms of Service: https://example.com/tos',
+  uri: 'https://example.com/login',
+  version: '1',
+  chainId: 1,
+  nonce: 'abcd1234',
+  issuedAt: '2023-10-01T12:00:00.000Z',
+  expirationTime: '2023-10-01T12:05:00.000Z',
+  notBefore: '2023-10-01T11:55:00.000Z',
+  requestId: 'request-123',
+  resources: ['https://example.com/my-web2-claim.json', 'https://example.com/my-web3-claim.json'],
+})
+Technical Details
+The function formats the message according to the exact specification in EIP-4361
+Required fields are always included in a specific order
+Optional fields are only included if provided and non-empty
+Resources are formatted as a bulleted list if provided
+The message structure ensures compatibility with SIWE verification libraries
+Use Cases
+Authentication: Creating messages for wallet-based authentication
+Session Management: Generating time-bound authentication tokens
+Access Control: Creating signed messages for resource access
+Integration: Building SIWE-compatible authentication flows
+
+
+
+SSR Utilities
+The Ethereum Identity Kit v0.2.49 introduces improved Server-Side Rendering (SSR) compatibility with new utility functions that safely handle browser-specific APIs.
+
+Overview
+When using Ethereum Identity Kit in SSR environments (Next.js, Remix, etc.), browser APIs like window and localStorage are not available during server-side rendering. These utilities provide safe wrappers that prevent runtime errors in SSR contexts.
+
+safeLocalStorage
+A SSR-safe wrapper for localStorage that prevents errors when accessed on the server.
+
+import { safeLocalStorage } from 'ethereum-identity-kit'
+ 
+// Safe to use in SSR environments
+const value = safeLocalStorage.getItem('key')
+safeLocalStorage.setItem('key', 'value')
+safeLocalStorage.removeItem('key')
+safeLocalStorage.clear()
+API
+The safeLocalStorage object provides all standard localStorage methods:
+
+getItem(key: string): string | null - Returns null on server
+setItem(key: string, value: string): void - No-op on server
+removeItem(key: string): void - No-op on server
+clear(): void - No-op on server
+key(index: number): string | null - Returns null on server
+length: number - Returns 0 on server
+safeWindow
+A SSR-safe accessor for the window object that returns undefined on the server.
+
+import { safeWindow } from 'ethereum-identity-kit'
+ 
+// Safe to use in SSR environments
+if (safeWindow) {
+  // Window is available (client-side)
+  const width = safeWindow.innerWidth
+}
+SSR Best Practices
+1. Component Mounting
+Use React hooks to ensure browser APIs are only accessed client-side:
+
+import { useEffect, useState } from 'react'
+import { safeWindow } from 'ethereum-identity-kit'
+ 
+function MyComponent() {
+  const [mounted, setMounted] = useState(false)
+ 
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+ 
+  if (!mounted) {
+    return <div>Loading...</div>
+  }
+ 
+  // Safe to use browser APIs here
+  return <div>Window width: {safeWindow?.innerWidth}</div>
+}
+2. Conditional Rendering
+Check for browser environment before rendering browser-dependent components:
+
+import { safeWindow } from 'ethereum-identity-kit'
+ 
+function BrowserOnlyFeature() {
+  if (!safeWindow) {
+    return null // Don't render on server
+  }
+ 
+  return <div>Browser-only content</div>
+}
+3. Framework Integration
+Next.js
+Use dynamic imports with SSR disabled for browser-only components:
+
+import dynamic from 'next/dynamic'
+ 
+const ProfileCard = dynamic(
+  () => import('ethereum-identity-kit').then(mod => mod.ProfileCard),
+  { ssr: false }
+)
+Remix
+Use ClientOnly wrapper for browser-only components:
+
+import { ClientOnly } from 'remix-utils'
+import { ProfileCard } from 'ethereum-identity-kit'
+ 
+export default function Profile() {
+  return (
+    <ClientOnly fallback={<div>Loading...</div>}>
+      {() => <ProfileCard addressOrName="vitalik.eth" />}
+    </ClientOnly>
+  )
+}
+Migration Guide
+If you’re upgrading from a previous version and experiencing SSR issues:
+
+Replace direct localStorage access with safeLocalStorage
+Replace direct window access with safeWindow
+Wrap browser-dependent components with appropriate SSR guards
+Test your application with JavaScript disabled to identify SSR issues
+TypeScript Support
+All SSR utilities are fully typed and provide the same interfaces as their browser counterparts, ensuring type safety across your application.
+
+
+
+TypeScript Support
+Ethereum Identity Kit is built with TypeScript and provides comprehensive type definitions for all components, hooks, and utilities. The library features significant improvements to type safety and developer experience with the latest API consolidation.
+
+Overview
+The library provides:
+
+Complete type coverage for all exports
+Strict type checking with no any types
+Enhanced JSDoc documentation for better IDE support
+Explicit return type interfaces for all hooks
+Type-safe component props with full IntelliSense support
+Consolidated API interfaces for better consistency
+Hook Return Types
+All hooks provide explicit return type interfaces for better type safety and autocompletion.
+
+useProfileDetails
+interface UseProfileDetailsReturn {
+  profileDetails: ProfileDetails | null
+  isLoading: boolean
+  error: Error | null
+  refetch: () => void
+}
+ 
+const result: UseProfileDetailsReturn = useProfileDetails('vitalik.eth')
+useETHPrice
+interface UseETHPriceReturn {
+  ethPrice: number | null
+  isLoading: boolean
+  error: Error | null
+}
+ 
+const result: UseETHPriceReturn = useETHPrice()
+useFollowingState
+interface UseFollowingStateReturn {
+  followingState: FollowingState | null
+  isLoading: boolean
+  error: Error | null
+  refetch: () => void
+}
+ 
+const result: UseFollowingStateReturn = useFollowingState({
+  userAddress: '0x123...',
+  targetAddress: '0x456...'
+})
+useFollowButton
+The enhanced useFollowButton hook with comprehensive error handling and accessibility:
+
+interface UseFollowButtonParams {
+  lookupAddress: string
+  connectedAddress?: string
+  selectedList?: number
+}
+ 
+interface UseFollowButtonReturn {
+  buttonText: string
+  buttonState: string
+  handleAction: () => Promise<void>
+  isLoading: boolean
+  isDisabled: boolean
+  error: string | null
+  clearError: () => void
+  ariaLabel: string
+  ariaPressed: boolean | undefined
+  pendingState: string | null
+  disableHover: boolean
+  setDisableHover: (value: boolean) => void
+}
+ 
+// Usage with full type safety and error handling
+const buttonProps = useFollowButton({
+  lookupAddress: '0x123...',
+  connectedAddress: '0xabc...'
+})
+ 
+if (buttonProps.error) {
+  console.error('Follow action failed:', buttonProps.error)
+}
+Component Prop Types
+ProfileCard & FullWidthProfile
+The API has been consolidated with new interfaces for better type safety:
+
+interface ProfileExtraOptions {
+  customFollowButton?: React.ReactNode
+  nameMenu?: React.ReactNode
+  role?: string
+  openListSettings?: () => void
+}
+ 
+interface PrefetchedData {
+  profile?: {
+    data: any
+    isLoading: boolean
+    refetch: () => void
+  }
+  stats?: {
+    data: any
+    isLoading: boolean
+    refetch: () => void
+  }
+}
+ 
+interface ProfileCardProps {
+  addressOrName: string
+  list?: number
+  connectedAddress?: string
+  darkMode?: boolean
+  showFollowerState?: boolean
+  showFollowButton?: boolean
+  showEmptySocials?: boolean
+  onStatClick?: (stat: string) => void
+  hasCommonFollowersModal?: boolean
+  extraOptions?: ProfileExtraOptions
+  prefetched?: PrefetchedData
+  className?: string
+  style?: React.CSSProperties
+}
+ 
+// Usage with full type safety
+<ProfileCard
+  addressOrName="vitalik.eth"
+  showFollowButton={true}
+  extraOptions={{ 
+    customFollowButton: <CustomButton />,
+    role: "Developer" 
+  }}
+  prefetched={{
+    profile: { data: profileData, isLoading: false, refetch: () => {} }
+  }}
+  onStatClick={(stat) => console.log(stat)} // stat is typed as string
+/>
+FollowButton
+Enhanced with custom click handler support:
+
+interface FollowButtonProps {
+  lookupAddress: string
+  connectedAddress?: string
+  selectedList?: number
+  disabled?: boolean
+  onDisconnectedClick?: () => void
+  customOnClick?: (buttonState: string) => boolean
+  sounds?: Record<string, string>
+  customClassName?: string
+  customLoader?: React.ReactNode
+}
+ 
+// Usage with custom click handler
+<FollowButton
+  lookupAddress="0x123..."
+  customOnClick={(state) => {
+    console.log('Current state:', state)
+    return false // Continue with default behavior
+  }}
+/>
+FollowersYouKnow
+Updated prop names for consistency:
+
+interface FollowersYouKnowProps {
+  lookupAddress: string
+  connectedAddress?: string
+  showEmpty?: boolean      // Previously displayEmpty
+  showLoading?: boolean    // New prop for loading control
+  hasModal?: boolean
+  onProfileClick?: (address: string) => void
+  className?: string
+}
+ 
+// Usage with new prop names
+<FollowersYouKnow
+  lookupAddress="vitalik.eth"
+  showEmpty={false}
+  showLoading={true}
+/>
+ProfileStats
+Updated with new prefetched data structure:
+
+interface ProfileStatsProps {
+  addressOrName: string
+  list?: number
+  containerDirection?: 'row' | 'column'
+  statsDirection?: 'row' | 'column'
+  statsStyle?: React.CSSProperties
+  containerStyle?: React.CSSProperties
+  onStatClick?: (stat: string) => void
+  prefetched?: {
+    stats: {
+      data: any
+      isLoading: boolean
+    }
+  }
+}
+ 
+// Usage with prefetched data
+<ProfileStats
+  addressOrName="vitalik.eth"
+  prefetched={{
+    stats: { data: statsData, isLoading: false }
+  }}
+/>
+ProfileSocials
+interface ProfileSocialsProps {
+  userAddress: string
+  name?: string
+  records: Record<string, string>
+  darkMode?: boolean
+  includeUrls?: boolean
+  iconSize?: number
+  isLoading?: boolean
+  showEmptySocials?: boolean
+}
+ 
+// Usage with full type safety
+<ProfileSocials
+  userAddress="0x123..."
+  records={{ 'com.twitter': 'username' }}
+  showEmptySocials={false}
+  iconSize={24} // number type enforced
+/>
+Breaking Changes in Latest Version
+The latest version introduces several API consolidation changes for better consistency:
+
+1. Component Props Renamed
+// Before
+<ProfileCard options={{ followButton: <Button /> }} />
+<FullWidthProfile role="Developer" options={{ followButton: <Button /> }} />
+<FollowersYouKnow displayEmpty={false} />
+ 
+// After  
+<ProfileCard extraOptions={{ customFollowButton: <Button /> }} />
+<FullWidthProfile extraOptions={{ role: "Developer", customFollowButton: <Button /> }} />
+<FollowersYouKnow showEmpty={false} />
+2. Prefetched Data Structure
+// Before - flat props
+<ProfileCard 
+  profileData={data}
+  prefetchedProfileLoading={loading}
+  refetchProfileData={refetch}
+  statsData={statsData}
+  prefetchedStatsLoading={statsLoading}
+  refetchStatsData={refetchStats}
+/>
+ 
+// After - nested structure
+<ProfileCard 
+  prefetched={{
+    profile: { data, isLoading: loading, refetch },
+    stats: { data: statsData, isLoading: statsLoading, refetch: refetchStats }
+  }}
+/>
+3. Role Prop Location
+// Before - root level prop
+<FullWidthProfile role="Developer" />
+ 
+// After - in extraOptions
+<FullWidthProfile 
+  extraOptions={{ role: "Developer" }}
+/>
+4. Follow Button Prop Names
+// Before - in options
+<ProfileCard options={{ followButton: <CustomButton /> }} />
+ 
+// After - in extraOptions with new name
+<ProfileCard extraOptions={{ customFollowButton: <CustomButton /> }} />
+Utility Function Types
+safeLocalStorage
+interface SafeLocalStorage {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem(key: string): void
+  clear(): void
+  key(index: number): string | null
+  readonly length: number
+}
+ 
+const storage: SafeLocalStorage = safeLocalStorage
+safeWindow
+type SafeWindow = Window | undefined
+ 
+const window: SafeWindow = safeWindow
+Enhanced Error Handling Types
+Action Configuration Pattern
+The library now uses an ACTION_CONFIG pattern for cleaner action organization:
+
+type ActionConfig = {
+  [key: string]: {
+    execute: () => Promise<void>
+    nextState: string
+    errorMessage: string
+  }
+}
+ 
+// Example usage in custom implementations
+const ACTION_CONFIG: ActionConfig = {
+  follow: {
+    execute: async () => { /* follow logic */ },
+    nextState: 'Following',
+    errorMessage: 'Failed to follow user'
+  },
+  unfollow: {
+    execute: async () => { /* unfollow logic */ },
+    nextState: 'Follow',
+    errorMessage: 'Failed to unfollow user'
+  }
+}
+Advanced Type Usage
+Generic Type Constraints
+// Custom hook with type constraints
+function useTypedProfile<T extends string | `0x${string}`>(
+  addressOrName: T
+): UseProfileDetailsReturn {
+  return useProfileDetails(addressOrName)
+}
+ 
+// Type-safe usage
+const profile1 = useTypedProfile('vitalik.eth') // ✅ Valid ENS
+const profile2 = useTypedProfile('0x123...') // ✅ Valid address
+Component Ref Types
+import { forwardRef } from 'react'
+import { ProfileCard } from 'ethereum-identity-kit'
+ 
+// Forward ref with proper typing
+const CustomProfileCard = forwardRef<
+  HTMLDivElement,
+  React.ComponentProps<typeof ProfileCard>
+>((props, ref) => {
+  return <ProfileCard {...props} ref={ref} />
+})
+Migration Guide
+From Previous Version
+Update prop names:
+
+// Change options → extraOptions
+// Change displayEmpty → showEmpty  
+// Change followButton → customFollowButton
+// Move role to extraOptions
+Restructure prefetched data:
+
+// Convert flat props to nested prefetched object
+const prefetched = {
+  profile: { data: profileData, isLoading, refetch },
+  stats: { data: statsData, isLoading: statsLoading, refetch: refetchStats }
+}
+Update TypeScript imports if using internal types:
+
+// Use new consolidated interfaces
+import type { ProfileExtraOptions, PrefetchedData } from 'ethereum-identity-kit'
+Best Practices
+Use the new nested structures for better organization:
+
+// Good - new nested structure
+const extraOptions: ProfileExtraOptions = {
+  customFollowButton: <CustomButton />,
+  role: 'Developer'
+}
+ 
+<ProfileCard extraOptions={extraOptions} />
+Leverage the prefetched data structure for performance:
+
+const prefetched: PrefetchedData = {
+  profile: { data, isLoading, refetch },
+  stats: { data: statsData, isLoading: statsLoading, refetch: refetchStats }
+}
+ 
+<ProfileCard prefetched={prefetched} />
+Use discriminated unions for state management:
+
+type LoadingState = 
+  | { status: 'loading'; data: null }
+  | { status: 'success'; data: ProfileDetails }
+  | { status: 'error'; error: Error }
+Use strict null checks to catch potential runtime errors:
+
+const profile = useProfileDetails('vitalik.eth')
+ 
+if (profile.profileDetails) {
+  // TypeScript knows profileDetails is not null here
+  console.log(profile.profileDetails.name)
+}
+IDE Support
+The library provides excellent IDE support with:
+
+IntelliSense autocompletion for all props and methods
+Inline documentation via JSDoc comments
+Type checking in real-time
+Go to definition for all exported types
+Refactoring support with type safety
+Migration warnings for deprecated props
+Popular IDEs with full support:
+
+Visual Studio Code
+WebStorm
+Vim with TypeScript plugins
+Emacs with TypeScript mode
+
+
+
+Migration Guide
+This guide will help you migrate your application to use the latest version of Ethereum Identity Kit with the new consolidated API structure.
+
+Breaking Changes Overview
+The latest version introduces several breaking changes focused on API consolidation, enhanced error handling, and improved accessibility:
+
+API Consolidation
+ProfileCard & FullWidthProfile: options → extraOptions
+Prefetched data structure: Flat props → Nested prefetched object
+FollowersYouKnow: displayEmpty → showEmpty
+FollowButton: followButton → customFollowButton
+FullWidthProfile: role prop moved to extraOptions
+ProfileStats: prefetchedStats/isPrefetchedStatsLoading → prefetched object
+Enhanced Features
+useFollowButton: Extended return type with error handling and accessibility
+FollowButton: New error display and accessibility features
+Address Validation: Automatic validation using viem’s isAddress
+Step-by-Step Migration
+1. Update ProfileCard Components
+Before (Old API)
+<ProfileCard
+  addressOrName="vitalik.eth"
+  options={{
+    followButton: <CustomFollowButton />,
+    nameMenu: <CustomMenu />,
+    profileData: profileData,
+    prefetchedProfileLoading: isProfileLoading,
+    refetchProfileData: refetchProfile,
+    statsData: statsData,
+    prefetchedStatsLoading: isStatsLoading,
+    refetchStatsData: refetchStats,
+  }}
+/>
+After (New API)
+<ProfileCard
+  addressOrName="vitalik.eth"
+  extraOptions={{
+    customFollowButton: <CustomFollowButton />,
+    nameMenu: <CustomMenu />,
+  }}
+  prefetched={{
+    profile: {
+      data: profileData,
+      isLoading: isProfileLoading,
+      refetch: refetchProfile,
+    },
+    stats: {
+      data: statsData,
+      isLoading: isStatsLoading,
+      refetch: refetchStats,
+    },
+  }}
+/>
+2. Update FullWidthProfile Components
+Before (Old API)
+<FullWidthProfile
+  addressOrName="vitalik.eth"
+  role="Developer"
+  options={{
+    followButton: <CustomFollowButton />,
+    nameMenu: <CustomMenu />,
+    profileData: profileData,
+    prefetchedProfileLoading: isProfileLoading,
+    refetchProfileData: refetchProfile,
+    openListSettings: () => setShowSettings(true),
+  }}
+/>
+After (New API)
+<FullWidthProfile
+  addressOrName="vitalik.eth"
+  extraOptions={{
+    role: "Developer",
+    customFollowButton: <CustomFollowButton />,
+    nameMenu: <CustomMenu />,
+    openListSettings: () => setShowSettings(true),
+  }}
+  prefetched={{
+    profile: {
+      data: profileData,
+      isLoading: isProfileLoading,
+      refetch: refetchProfile,
+    },
+  }}
+/>
+3. Update FollowersYouKnow Components
+Before (Old API)
+<FollowersYouKnow
+  lookupAddress="vitalik.eth"
+  connectedAddress="0x123..."
+  displayEmpty={false}
+/>
+After (New API)
+<FollowersYouKnow
+  lookupAddress="vitalik.eth"
+  connectedAddress="0x123..."
+  showEmpty={false}
+  showLoading={true}
+/>
+4. Update FollowButton Usage
+If you were using the FollowButton through component options:
+
+Before (Old API)
+const customFollowButton = (
+  <FollowButton
+    lookupAddress={lookupAddress}
+    connectedAddress={connectedAddress}
+  />
+)
+ 
+<ProfileCard
+  addressOrName="vitalik.eth"
+  options={{ followButton: customFollowButton }}
+/>
+After (New API)
+const customFollowButton = (
+  <FollowButton
+    lookupAddress={lookupAddress}
+    connectedAddress={connectedAddress}
+    customOnClick={(buttonState) => {
+      console.log('Button state:', buttonState)
+      return false // Continue with default behavior
+    }}
+  />
+)
+ 
+<ProfileCard
+  addressOrName="vitalik.eth"
+  extraOptions={{ customFollowButton }}
+/>
+5. Update ProfileStats Usage
+Before (Old API)
+<ProfileStats
+  addressOrName="vitalik.eth"
+  prefetchedStats={statsData}
+  isPrefetchedStatsLoading={isLoading}
+/>
+After (New API)
+<ProfileStats
+  addressOrName="vitalik.eth"
+  prefetched={{
+    stats: {
+      data: statsData,
+      isLoading: isLoading
+    }
+  }}
+/>
+6. Update useFollowButton Implementation
+Before (Old API)
+const { buttonText, buttonState, handleAction, isLoading } = useFollowButton({
+  lookupAddress: '0x123...',
+  connectedAddress: '0xabc...'
+})
+ 
+// Basic button implementation
+<button onClick={handleAction} disabled={isLoading}>
+  {buttonText}
+</button>
+After (New API)
+const { 
+  buttonText, 
+  buttonState, 
+  handleAction, 
+  isLoading,
+  isDisabled,
+  error,
+  clearError,
+  ariaLabel,
+  ariaPressed
+} = useFollowButton({
+  lookupAddress: '0x123...',
+  connectedAddress: '0xabc...'
+})
+ 
+// Enhanced button with error handling and accessibility
+<button 
+  onClick={handleAction} 
+  disabled={isDisabled}
+  aria-label={ariaLabel}
+  aria-pressed={ariaPressed}
+  title={error || undefined}
+  className={error ? 'error' : ''}
+>
+  {buttonText}
+</button>
+Automated Migration Script
+Here’s a simple script to help automate some of the migration:
+
+# Find and replace common patterns in your codebase
+# Note: Always review changes before applying
+ 
+# Replace options prop with extraOptions
+find . -name "*.tsx" -o -name "*.ts" | xargs sed -i 's/options={{/extraOptions={{/g'
+ 
+# Replace displayEmpty with showEmpty
+find . -name "*.tsx" -o -name "*.ts" | xargs sed -i 's/displayEmpty=/showEmpty=/g'
+ 
+# Replace followButton with customFollowButton
+find . -name "*.tsx" -o -name "*.ts" | xargs sed -i 's/followButton:/customFollowButton:/g'
+Common Migration Patterns
+Pattern 1: Consolidating Prefetched Props
+// Helper function to consolidate prefetched data
+function consolidatePrefetchedData(
+  profileData: any,
+  isProfileLoading: boolean,
+  refetchProfile: () => void,
+  statsData?: any,
+  isStatsLoading?: boolean,
+  refetchStats?: () => void
+) {
+  return {
+    profile: {
+      data: profileData,
+      isLoading: isProfileLoading,
+      refetch: refetchProfile,
+    },
+    ...(statsData && {
+      stats: {
+        data: statsData,
+        isLoading: isStatsLoading || false,
+        refetch: refetchStats || (() => {}),
+      },
+    }),
+  }
+}
+ 
+// Usage
+const prefetched = consolidatePrefetchedData(
+  profileData,
+  isProfileLoading,
+  refetchProfile,
+  statsData,
+  isStatsLoading,
+  refetchStats
+)
+ 
+<ProfileCard prefetched={prefetched} />
+Pattern 2: TypeScript Interface Updates
+// Before
+interface OldProfileOptions {
+  followButton?: React.ReactNode
+  nameMenu?: React.ReactNode
+  profileData?: any
+  prefetchedProfileLoading?: boolean
+  refetchProfileData?: () => void
+}
+ 
+interface OldUseFollowButtonReturn {
+  buttonText: string
+  buttonState: string
+  handleAction: () => void
+  isLoading: boolean
+  pendingState: string | null
+  disableHover: boolean
+  setDisableHover: (value: boolean) => void
+}
+ 
+// After
+interface NewExtraOptions {
+  customFollowButton?: React.ReactNode
+  nameMenu?: React.ReactNode
+  role?: string
+  openListSettings?: () => void
+}
+ 
+interface NewPrefetchedData {
+  profile?: {
+    data: any
+    isLoading: boolean
+    refetch: () => void
+  }
+  stats?: {
+    data: any
+    isLoading: boolean
+    refetch: () => void
+  }
+}
+ 
+interface NewUseFollowButtonReturn {
+  buttonText: string
+  buttonState: string
+  handleAction: () => Promise<void> // Now async
+  isLoading: boolean
+  isDisabled: boolean // New computed property
+  error: string | null // New error state
+  clearError: () => void // New error handler
+  ariaLabel: string // New accessibility
+  ariaPressed: boolean | undefined // New accessibility
+  pendingState: string | null
+  disableHover: boolean
+  setDisableHover: (value: boolean) => void
+}
+Testing Your Migration
+1. Component Rendering Tests
+import { render } from '@testing-library/react'
+import { ProfileCard } from 'ethereum-identity-kit'
+ 
+test('ProfileCard renders with new API', () => {
+  const { getByTestId } = render(
+    <ProfileCard
+      addressOrName="test.eth"
+      extraOptions={{
+        customFollowButton: <button data-testid="custom-button">Follow</button>,
+      }}
+      prefetched={{
+        profile: {
+          data: mockProfileData,
+          isLoading: false,
+          refetch: jest.fn(),
+        },
+      }}
+    />
+  )
+  
+  expect(getByTestId('custom-button')).toBeInTheDocument()
+})
+2. Type Checking
+// Ensure TypeScript compilation passes
+import type { 
+  ProfileExtraOptions, 
+  PrefetchedData,
+  UseFollowButtonParams,
+  UseFollowButtonReturn 
+} from 'ethereum-identity-kit'
+ 
+const extraOptions: ProfileExtraOptions = {
+  customFollowButton: <button>Follow</button>,
+  role: 'Developer',
+}
+ 
+const prefetched: PrefetchedData = {
+  profile: {
+    data: mockData,
+    isLoading: false,
+    refetch: () => {},
+  },
+  stats: {
+    data: statsData,
+    isLoading: false,
+    refetch: () => {},
+  },
+}
+ 
+// Test new hook interfaces
+const hookParams: UseFollowButtonParams = {
+  lookupAddress: '0x123...',
+  connectedAddress: '0xabc...',
+  selectedList: 1
+}
+Troubleshooting
+Common Issues
+TypeScript Errors: Make sure you’ve updated all prop names and interface imports
+Runtime Errors: Check that prefetched data structure is correctly nested
+Missing Props: Ensure role prop is moved to extraOptions in FullWidthProfile
+Async Errors: The handleAction in useFollowButton is now async - update any custom wrappers
+Validation Errors: Invalid addresses now set error state instead of throwing
+Getting Help
+If you encounter issues during migration:
+
+Check the TypeScript documentation for updated interfaces
+Review component-specific documentation for detailed prop information
+Open an issue if you find migration problems
+What’s Next
+After completing the migration:
+
+Test thoroughly - Ensure all components render correctly
+Review new features - Explore enhanced TypeScript support and new props
+Update documentation - Update your internal docs to reflect the new API
+Consider new capabilities - Take advantage of improved loading states and custom click handlers
+
+
+

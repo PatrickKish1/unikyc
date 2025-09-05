@@ -121,7 +121,7 @@ export default function Header() {
                 </Identity>
                 <WalletDropdownDisconnect />
               </WalletDropdown>
-              {/* <WalletModal isOpen={showModal} onClose={() => {setShowModal(false)}} /> */}
+              <WalletModal isOpen={showModal} onClose={() => {setShowModal(false)}} />
             </Wallet>
           </div>
 
