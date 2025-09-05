@@ -25,7 +25,7 @@ interface ProfileCardProps {
     website?: string;
   };
   onFollow?: (address: string) => void;
-  onVouch?: (address: string) => void;
+  onVouch?: (address: string, confidence?: number, notes?: string) => void;
   onMessage?: (address: string) => void;
   isFollowing?: boolean;
   isVouched?: boolean;
@@ -62,11 +62,11 @@ export function ProfileCard({
     chainId: 1 
   });
   const { data: avatar } = useEnsAvatar({ 
-    name: ensName || resolvedEnsName, 
+    name: ensName || (resolvedEnsName ?? undefined), 
     chainId: 1 
   });
 
-  const displayName = ensName || resolvedEnsName || `${address.slice(0, 6)}...${address.slice(-4)}`;
+  const displayName = ensName || (resolvedEnsName ?? undefined) || `${address.slice(0, 6)}...${address.slice(-4)}`;
   const isEnsName = displayName.includes('.eth');
 
   const handleFollow = async () => {
@@ -272,7 +272,7 @@ export function ProfileCard({
         onVouch={handleVouch}
         targetUser={{
           address,
-          ensName: ensName || resolvedEnsName,
+          ensName: ensName || (resolvedEnsName ?? undefined),
           isKycVerified
         }}
         isLoading={isVouchLoading}
@@ -296,11 +296,11 @@ export function CompactProfileCard({
     chainId: 1 
   });
   const { data: avatar } = useEnsAvatar({ 
-    name: ensName || resolvedEnsName, 
+    name: ensName || (resolvedEnsName ?? undefined), 
     chainId: 1 
   });
 
-  const displayName = ensName || resolvedEnsName || `${address.slice(0, 6)}...${address.slice(-4)}`;
+  const displayName = ensName || (resolvedEnsName ?? undefined) || `${address.slice(0, 6)}...${address.slice(-4)}`;
 
   return (
     <div className={`flex items-center space-x-3 p-3 bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg hover:bg-white/10 transition-all duration-300 ${className}`}>
