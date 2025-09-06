@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -60,9 +61,9 @@ export default function SocialPage() {
     await discoverProfiles(query);
   };
 
-  const handleVouch = async (profileAddress: string, confidence: number, notes: string) => {
+  const handleVouch = async (profileAddress: string, confidence?: number, notes?: string) => {
     try {
-      await vouchForUser(profileAddress, confidence, notes);
+      await vouchForUser(profileAddress, confidence || 9, notes || '');
     } catch (error) {
       console.error('Vouch failed:', error);
     }

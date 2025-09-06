@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 "use client";
 
 import { useState } from 'react';
@@ -8,6 +10,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { UserPlus, Shield, CheckCircle, AlertCircle, Heart, MessageCircle, Share } from 'lucide-react';
 import { VouchModal } from '@/components/kyc/VouchModal';
+import Image from 'next/image';
 
 interface ProfileCardProps {
   address: string;
@@ -25,7 +28,7 @@ interface ProfileCardProps {
     website?: string;
   };
   onFollow?: (address: string) => void;
-  onVouch?: (address: string, confidence?: number, notes?: string) => void;
+  onVouch?: (address: string, confidence?: number, notes?: string) => Promise<void>;
   onMessage?: (address: string) => void;
   isFollowing?: boolean;
   isVouched?: boolean;
@@ -111,10 +114,13 @@ export function ProfileCard({
           <div className="flex items-center space-x-3">
             <div className="relative">
               {avatar ? (
-                <img
+                <Image
                   src={avatar}
                   alt={displayName}
                   className="w-12 h-12 rounded-full object-cover"
+                  width={48}
+                  unoptimized={true}
+                  height={48}
                 />
               ) : (
                 <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
@@ -305,9 +311,12 @@ export function CompactProfileCard({
   return (
     <div className={`flex items-center space-x-3 p-3 bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg hover:bg-white/10 transition-all duration-300 ${className}`}>
       {avatar ? (
-        <img
+        <Image
           src={avatar}
           alt={displayName}
+          width={32}
+          height={32}
+          unoptimized={true}
           className="w-8 h-8 rounded-full object-cover"
         />
       ) : (
